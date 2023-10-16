@@ -1,5 +1,7 @@
 all: build
 
+# Python >= 3 is required, we do not support the older
+# Python (I.E. 2.7)
 PYTHON ?= python3
 
 .PHONY: build
