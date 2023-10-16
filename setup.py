@@ -36,7 +36,9 @@ setup(
     include_package_data=True,
     setup_requires=['wheel'],
     install_requires=[
-        "pyyaml", "tabulate",
+        "pyyaml",
+        "tabulate",
+        "pyluwen",
     ],
     entry_points={
         "console_scripts": [
