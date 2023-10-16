@@ -1,0 +1,4 @@
+pyyaml
+tabulate
+#pyluwen @ git+https://github.com/luwen#subdirectory=crates/pyluwen
+pyluwen @ git+ssh://git@yyz-gitlab.local.tenstorrent.com/syseng-platform/luwen.git#subdirectory=crates/pyluwen
