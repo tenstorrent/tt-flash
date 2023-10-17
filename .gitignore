@@ -4,3 +4,4 @@ my-env/
 .ignored/
 __pycache__/
 .vscode/
+build/
