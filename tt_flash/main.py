@@ -214,8 +214,8 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
         try:
             my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
         except TTError as err:
-            pass
             # Ok to keep going if there's a timeout
+            pass
 
         board_info = int(read_spi_reg(my_chip, "BOARD_INFO"), 16)
         board_type = (board_info >> 36) & 0xFFFFF
@@ -232,100 +232,100 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
                                 wait_for_done=True,
                                 timeout=0.1)
             except TTError as err:
-                pass
                 # Ok to keep going if there's a timeout
+                pass
             return
         else:
             print("tt-flash version > ROM version. ROM will now be updated.")
 
+        # 0x1: E300
+        # 0x3: E300-105
+        # 0x7: E75
+        # 0x8: Nebula
+        # 0xA: E300x2
+        # 0xB: Galaxy
+
+        if board_type == 0x1:
+            boardname = "E300"
+        elif board_type == 0x3:
+            boardname = "E300_105"
+        elif board_type == 0x7:
+            boardname = "E75"
+        elif board_type == 0xA:
+            boardname = "E300_X2"
+        else:
+            raise TTError(f"This version of tt-flash does not have support for a board with boardtype {board_type}!")
+
+        image = fw_package.extractfile(f"./{boardname}/image.bin")
+        mask = fw_package.extractfile(f"./{boardname}/mask.json")
+        if image is None and mask is None:
+            raise TTError(f"Could not find flash data for {boardname} in tarfile")
+        elif image is None:
+            raise TTError(f"Could not find flash image for {boardname} in tarfile; expected to see {boardname}/image.bin")
+        elif mask is None:
+            raise TTError(f"Could not find param data for {boardname} in tarfile; expected to see {boardname}/mask.json")
+
+        # First we verify that the format of mask is valid so we don't partially flash before discovering that the mask is invalid
+        mask = json.loads(mask.read())
+
+        # I expected to see a list of dicts, with the keys
+        # "start", "end", "tag"
+        param_handlers = []
+        for v in mask:
+            start = v.get("start", None)
+            end = v.get("end", None)
+            tag = v.get("tag", None)
+
+            if (start is None or not isinstance(start, int)) or \
+                (end is None or not isinstance(end, int)) or \
+                (tag is None or not isinstance(tag, str)):
+                raise TTError(f"Invalid mask format for {boardname}; expected to see a list of dicts with keys 'start', 'end', 'tag'")
+
+            if tag in TAG_HANDLERS:
+                param_handlers.append(((start, end), TAG_HANDLERS[tag]))
+            else:
+                if len(TAG_HANDLERS) > 0:
+                    pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
+                    pretty_tags[-1] = f"or {pretty_tags[-1]}"
+                    raise TTError(f"Invalid tag {tag} for {boardname}; expected to see one of {pretty_tags}")
+                else:
+                    raise TTError(f"Invalid tag {tag} for {boardname}; there aren't any tags defined!")
+
+        # Now we load the image and start replacing parameters
+        image = image.read()
+
+        writes = []
+
+        curr_addr = 0
+        for line in image.decode("utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("@"):
+                curr_addr = int(line.lstrip("@").strip())
+            else:
+                data = b16decode(line)
+
+                curr_stop = curr_addr + len(data)
+
+                for (start, end), handler in param_handlers:
+                    if start < curr_stop and end > curr_addr:
+                        # chip, data, spi_addr, data_addr, len
+                        if not isinstance(data, bytearray):
+                            data = bytearray(data)
+                        data = handler(my_chip, data, start, start - curr_addr, end - start)
+                    elif start >= curr_addr and start < curr_stop and end >= curr_stop:
+                        raise TTError(f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname}! This is not supported.")
+
+                if not isinstance(data, bytes):
+                    data = bytes(data)
+                writes.append((curr_addr, data))
+
+                curr_addr = curr_stop
+
+        print("Programming chip")
+
         spi_unlock(my_chip)
 
         try:
-            # 0x1: E300
-            # 0x3: E300-105
-            # 0x7: E75
-            # 0x8: Nebula
-            # 0xA: E300x2
-            # 0xB: Galaxy
-
-            if board_type == 0x1:
-                boardname = "E300"
-            elif board_type == 0x3:
-                boardname = "E300_105"
-            elif board_type == 0x7:
-                boardname = "E75"
-            elif board_type == 0xA:
-                boardname = "E300_X2"
-            else:
-                raise TTError(f"This version of tt-flash does not have support for a board with boardtype {board_type}!")
-
-            image = fw_package.extractfile(f"./{boardname}/image.bin")
-            mask = fw_package.extractfile(f"./{boardname}/mask.json")
-            if image is None and mask is None:
-                raise TTError(f"Could not find flash data for {boardname} in tarfile")
-            elif image is None:
-                raise TTError(f"Could not find flash image for {boardname} in tarfile; expected to see {boardname}/image.bin")
-            elif mask is None:
-                raise TTError(f"Could not find param data for {boardname} in tarfile; expected to see {boardname}/mask.json")
-
-            # First we verify that the format of mask is valid so we don't partially flash before discovering that the mask is invalid
-            mask = json.loads(mask.read())
-
-            # I expected to see a list of dicts, with the keys
-            # "start", "end", "tag"
-            param_handlers = []
-            for v in mask:
-                start = v.get("start", None)
-                end = v.get("end", None)
-                tag = v.get("tag", None)
-
-                if (start is None or not isinstance(start, int)) or \
-                    (end is None or not isinstance(end, int)) or \
-                    (tag is None or not isinstance(tag, str)):
-                    raise TTError(f"Invalid mask format for {boardname}; expected to see a list of dicts with keys 'start', 'end', 'tag'")
-
-                if tag in TAG_HANDLERS:
-                    param_handlers.append(((start, end), TAG_HANDLERS[tag]))
-                else:
-                    if len(TAG_HANDLERS) > 0:
-                        pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
-                        pretty_tags[-1] = f"or {pretty_tags[-1]}"
-                        raise TTError(f"Invalid tag {tag} for {boardname}; expected to see one of {pretty_tags}")
-                    else:
-                        raise TTError(f"Invalid tag {tag} for {boardname}; there aren't any tags defined!")
-
-            # Now we load the image and start replacing parameters
-            image = image.read()
-
-            writes = []
-
-            curr_addr = 0
-            for line in image.decode("utf-8").splitlines():
-                line = line.strip()
-                if line.startswith("@"):
-                    curr_addr = int(line.lstrip("@").strip())
-                else:
-                    data = b16decode(line)
-
-                    curr_stop = curr_addr + len(data)
-
-                    for (start, end), handler in param_handlers:
-                        if start < curr_stop and end > curr_addr:
-                            # chip, data, spi_addr, data_addr, len
-                            if not isinstance(data, bytearray):
-                                data = bytearray(data)
-                            data = handler(my_chip, data, start, start - curr_addr, end - start)
-                        elif start >= curr_addr and start < curr_stop and end >= curr_stop:
-                            raise TTError(f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname}! This is not supported.")
-
-                    if not isinstance(data, bytes):
-                        data = bytes(data)
-                    writes.append((curr_addr, data))
-
-                    curr_addr = curr_stop
-
-            print("Programming chip")
-
             # Now we write the image
             with spi.Spi(my_chip, mapping) as schip:
                 for addr, data in writes:
@@ -336,8 +336,8 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
             try:
                 my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
             except TTError as err:
-                pass
                 # Ok to keep going if there's a timeout
+                pass
     elif args.read:
         # Put ARC FW to sleep
         try:
@@ -356,10 +356,10 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
 
 def main():
     # Install sigint handler
-    # def signal_handler(sig, frame):
-    #     print("Ctrl-C: this process should not be interrupted")
+    def signal_handler(sig, frame):
+        print("Ctrl-C: this process should not be interrupted")
 
-    # signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     # Parse arguments
     parser = argparse.ArgumentParser(description=__doc__)
