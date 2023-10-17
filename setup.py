@@ -28,9 +28,9 @@ setup(
     long_description="",
     packages=find_packages(),
     package_data={
-        '': [
-            str(version_file),
-            "tt_flash/.ignored/*-spi-extrom.yaml"
+        "tt_flash": [
+            ".ignored/version.txt",
+            "data/*/*.yaml"
         ],
     },
     include_package_data=True,

@@ -15,7 +15,7 @@ import tarfile
 import time
 
 from base64 import b16decode
-from typing import Callable
+from typing import Callable, Optional
 
 from yaml import safe_load
 
@@ -44,9 +44,62 @@ with utility.package_root_path() as path:
 # TODO: encapsulate this in a class so that each "chip" instance
 # can have a different mapping
 mapping = {}
-arc_fw_defines = {}
+fw_defines = {}
 
-def get_chip_data(chip, file):
+@dataclass
+class HackAxi:
+    chip: HackChip
+    mapping: dict
+
+    def read32(self, addr: str) -> int:
+        it = self.mapping
+        for i in addr.split("."):
+            it = it[i]
+        return self.chip.axi_read32(it)
+
+    def write32(self, addr: str, value: int):
+        it = self.mapping
+        for i in addr.split("."):
+            it = it[i]
+        self.chip.axi_write32(it, value)
+
+class HackDict(dict):
+    def __init__(self, offset, *args, **kwargs):
+        self.offset = offset
+        super().__init__(*args, **kwargs)
+
+    def __getitem__(self, item):
+        return super().__getitem__(item)["Address"] + self.offset
+
+    def get(self, item):
+        return super().__getitem__(item)
+
+@dataclass
+class HackChip:
+    chip: Chip
+    board_type: int
+
+    @property
+    def AXI(self) -> HackAxi:
+        if not hasattr(self, "_AXI"):
+            self._AXI = HackAxi(self, {
+                "ARC_RESET": HackDict(0x1FF30000, safe_load(get_chip_data(self.chip, "reset.yaml", False))),
+                "ARC_SPI": HackDict(0x1FF70000, safe_load(get_chip_data(self.chip, "spi.yaml", False)))
+            })
+        return self._AXI
+
+    def axi_read32(self, addr: int) -> int:
+        return self.chip.axi_read32(addr)
+        # return self.chip.as_gs().pci_axi_read32(addr)
+
+    def axi_write32(self, addr: int, value: int):
+        return self.chip.axi_write32(addr, value)
+        # self.chip.as_gs().pci_axi_write32(addr, value)
+
+    def arc_msg(self, *args, **kwargs):
+        return self.chip.arc_msg(*args, **kwargs)
+
+def get_chip_data(chip, file, internal: bool):
     with utility.package_root_path() as path:
         if chip.as_wh() is not None:
             prefix = "wormhole"
@@ -54,17 +107,21 @@ def get_chip_data(chip, file):
             prefix = "grayskull"
         else:
             raise TTError("Only support flashing Wh or GS chips")
-        return open(str(path.joinpath(f".ignored/{prefix}/{file}")))
+        if internal:
+            prefix = f".ignored/{prefix}"
+        else:
+            prefix = f"data/{prefix}"
+        return open(str(path.joinpath(f"{prefix}/{file}")))
 
 def init_mapping(my_chip):
     global mapping
 
-    mapping = safe_load(get_chip_data(my_chip, "spi-extrom.yaml"))
+    mapping = safe_load(get_chip_data(my_chip, "spi-extrom.yaml", False))
 
 def init_fw_defines(chip):
-    global arc_fw_defines
+    global fw_defines
 
-    arc_fw_defines = safe_load(get_chip_data(chip, "arc_fw_defines.yaml"))
+    fw_defines = safe_load(get_chip_data(chip, "fw_defines.yaml", False))
 
 def read_spi_reg(my_chip, read_mapping):
     addr = mapping[read_mapping]['Address']
@@ -79,96 +136,16 @@ def read_spi_reg(my_chip, read_mapping):
 def spi_lock(my_chip, block_protect=8):
     # By default, with block_protect=8, locks first 2**(8-1) sectors
     # = 512 KB (= 4K/sector * 128 sectors) of SPI
-    with spi.Spi(my_chip, mapping) as schip:
+    with spi.Spi(my_chip, {}) as schip:
         schip.lock_spi(block_protect)
 
-
 def spi_unlock(my_chip):
-    with spi.Spi(my_chip, mapping) as schip:
+    with spi.Spi(my_chip, {}) as schip:
         schip.lock_spi(0)
 
-
 def spi_read(my_chip, addr, size):
-    with spi.Spi(my_chip, mapping) as schip:
+    with spi.Spi(my_chip, {}) as schip:
         return schip.read(addr, size)
-
-@dataclass
-class FwData:
-    addr: int
-    data: bytes
-
-@dataclass
-class FwPackage:
-    phy_fw: FwData
-    gs_fw: FwData
-    watchdog_fw: FwData
-    bootrom_fw: FwData
-    smbus_fw: FwData
-
-def program_fw(my_chip: Chip, fw_data: FwPackage):
-    with spi.Spi(my_chip, mapping) as schip:
-        # a. PCIe PHY FW
-        schip.write_from_bin_bytes(fw_data.phy_fw.addr, fw_data.phy_fw.data)
-
-        # b. GS FW
-        schip.write_from_hex_bytes(fw_data.gs_fw.addr, fw_data.gs_fw.data)
-
-        # c. WATCHDOG FW
-        schip.write_from_hex_bytes(fw_data.watchdog_fw.addr, fw_data.watchdog_fw.data)
-
-        # d. SPI BOOTROM FW
-        schip.write_from_bin_bytes(fw_data.bootrom_fw.addr, fw_data.bootrom_fw.data)
-
-        # e. SMBUS/I2C FW
-        schip.write_from_hex_bytes(fw_data.smbus_fw.addr, fw_data.smbus_fw.data)
-
-def float_as_uint32(num):
-    return struct.unpack("I", struct.pack("f", num))[0]
-
-
-def get_harvest_efuse(my_chip):
-    row_harvest = my_chip.arc_msg("MSG_TYPE_ARC_GET_HARVESTING")[0]
-    return row_harvest
-
-def get_harvest_ovr(my_chip, board_type):
-    if board_type == 0x7 or board_type == 0xA:
-        # E75 and E300x2 should have 2 rows harvested, so
-        # program row harvesting override if needed
-        req_harvest_rows = 2
-    else:
-        req_harvest_rows = 0
-
-    row_harvest = get_harvest_efuse(my_chip)
-
-    # bits [19:10] = tensix row harvest, [9:0] = mem row harvest
-    harvested = row_harvest & 0x3FF | ((row_harvest >> 10) & 0x3FF)
-    harvested_count = bin(harvested).count('1')
-    req_harvest_ovr_count = req_harvest_rows - harvested_count
-
-    if req_harvest_ovr_count <= 0:
-        return 0
-    else:
-        # Harvest the required number of rows starting from row 10 (bit 19)
-        harvest_ovr = 0
-        # Iterate rows 9, 8, 7, ..., 0
-        for i in reversed(range(10)):
-            if (harvested & (1 << i)) == 0:
-                # Harvest this row if it isn't already harvested
-                harvest_ovr |= (1 << i + 10)
-                req_harvest_ovr_count -= 1
-            if req_harvest_ovr_count <= 0:
-                break
-        return harvest_ovr
-
-def increment_reprogrammed_count(my_chip):
-    reprogrammed_count = int(read_spi_reg(my_chip, "REPROGRAMMED_COUNT"), 16)
-    if reprogrammed_count == 0xFFFF:
-        reprogrammed_count = 1
-    else:
-        reprogrammed_count += 1
-
-    with spi.Spi(my_chip, mapping) as schip:
-        schip.write_mapping("REPROGRAMMED_COUNT", reprogrammed_count)
 
 def rmw_param(chip, data: bytearray, spi_addr: int, data_addr: int, len: int) -> bytearray:
     # Read the existing data
@@ -209,26 +186,69 @@ TAG_HANDLERS: dict[str, Callable[[Chip, bytearray, int, int, int], bytearray]] =
     "date": date_param
 }
 
-def handle_args(my_chip, fw_package: tarfile.TarFile, args):
+def handle_args(my_chip: HackChip, fw_package: tarfile.TarFile, manifest_bundle_version: dict, args):
+    # if not args.skip_voltage_change:
+    #     voltage = read_voltage(my_chip)
+    #     if (voltage < 800):
+    #         set_voltage(my_chip, 800)
+
     if IS_PYINSTALLER_BIN or args.external:
         try:
-            my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
-        except TTError as err:
+            my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
+        except Exception as err:
             # Ok to keep going if there's a timeout
             pass
 
-        board_info = int(read_spi_reg(my_chip, "BOARD_INFO"), 16)
-        board_type = (board_info >> 36) & 0xFFFFF
-        if board_type not in (0x1, 0x3, 0x7, 0xA):
+        if my_chip.board_type not in (0x1, 0x3, 0x7, 0xA):
             utility.FATAL("This version of tt-flash does not support this board!")
-        rom_patch = int(read_spi_reg(my_chip, "ROM_PATCH_NUM"), 16)
-        print(f"ROM version is: {hex(rom_patch)}. tt-flash version is: {VERSION_DATE.strftime('0x%Y%m%d')}")
+
+        arc_bundle_version = 0xFFFFFFFF
+        new_bundle_version = (manifest_bundle_version.get("fwId", 0), manifest_bundle_version.get("releaseId", 0), manifest_bundle_version.get("patch", 0), manifest_bundle_version.get("debug", 0))
+
+        old_fw = False
+        bundle_version = (0, 0, 0, 0)
+        try:
+            fw_version = my_chip.arc_msg(fw_defines["MSG_TYPE_FW_VERSION"], wait_for_done=True, arg0=0, arg1=0)[0]
+
+            # Pre fw version 5 we don't have bundle support
+            # this version of tt-flash only works with bundled fw
+            # so it's safe to assume that we need to update
+            if fw_version < 0x01050000:
+                old_fw = True
+            else:
+                arc_bundle_version = my_chip.arc_msg(fw_defines["MSG_TYPE_FW_VERSION"], wait_for_done=True, arg0=2, arg1=0)[0]
+
+                if arc_bundle_version == 0xDEAD:
+                    old_fw = True
+        except Exception:
+            # Very old fw doesn't have support for getting the fw version at all
+            # so it's safe to assume that we need to update
+            old_fw = True
+
+        if old_fw:
+            if args.force:
+                print("Looks like you are running a very old set of fw, assuming that it needs an update")
+            else:
+                raise TTError("Looks like you are running a very old set of fw, it's safe to assume that it needs an update but please update it using --force")
+
+            print(f"Now flashing tt-flash version: {new_bundle_version}")
+        else:
+            patch = arc_bundle_version & 0xFF
+            minor = (arc_bundle_version >> 8) & 0xFF
+            major = (arc_bundle_version >> 16) & 0xFF
+            component = (arc_bundle_version >> 24) & 0xFF
+            bundle_version = (component, major, minor, patch)
+            if component != new_bundle_version[0]:
+                raise TTError(f"Bundle fwId ({new_bundle_version[0]}) does not match expected fwId ({component})")
+
+
+            print(f"ROM version is: {bundle_version}. tt-flash version is: {new_bundle_version}")
         if args.force:
             print("Forced ROM update requested. ROM will now be updated.")
-        elif rom_patch >= int(VERSION_DATE.strftime("0x%Y%m%d"), 16) and rom_patch != 0xFFFFFFFF:
+        elif bundle_version >= new_bundle_version and arc_bundle_version not in [0xFFFFFFFF, 0xDEAD]:
             print("ROM does not need to be updated.")
             try:
-                my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"],
+                my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE3"],
                                 wait_for_done=True,
                                 timeout=0.1)
             except TTError as err:
@@ -245,16 +265,16 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
         # 0xA: E300x2
         # 0xB: Galaxy
 
-        if board_type == 0x1:
+        if my_chip.board_type == 0x1:
             boardname = "E300"
-        elif board_type == 0x3:
+        elif my_chip.board_type == 0x3:
             boardname = "E300_105"
-        elif board_type == 0x7:
+        elif my_chip.board_type == 0x7:
             boardname = "E75"
-        elif board_type == 0xA:
+        elif my_chip.board_type == 0xA:
             boardname = "E300_X2"
         else:
-            raise TTError(f"This version of tt-flash does not have support for a board with boardtype {board_type}!")
+            raise TTError(f"This version of tt-flash does not have support for a board with boardtype {my_chip.board_type}!")
 
         image = fw_package.extractfile(f"./{boardname}/image.bin")
         mask = fw_package.extractfile(f"./{boardname}/mask.json")
@@ -327,32 +347,32 @@ def handle_args(my_chip, fw_package: tarfile.TarFile, args):
 
         try:
             # Now we write the image
-            with spi.Spi(my_chip, mapping) as schip:
+            with spi.Spi(my_chip, {}) as schip:
                 for addr, data in writes:
                     schip.write(addr, data)
         finally:
             spi_lock(my_chip)
 
             try:
-                my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
+                my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
             except TTError as err:
                 # Ok to keep going if there's a timeout
                 pass
-    elif args.read:
-        # Put ARC FW to sleep
-        try:
-            my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=False, timeout=0.1)
-        except:
-            pass
-        time.sleep(0.1)
+    # elif args.read:
+    #     # Put ARC FW to sleep
+    #     try:
+    #         my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=False, timeout=0.1)
+    #     except:
+    #         pass
+    #     time.sleep(0.1)
 
-        try:
-            with spi.Spi(my_chip, mapping) as schip:
-                schip.check_spi(2)
-        finally:
-            # Reawaken ARC FW
-            my_chip.arc_msg(arc_fw_defines["MSG_TYPE_ARC_STATE0"], wait_for_done=False, timeout=0.1)
-            time.sleep(0.1)
+    #     try:
+    #         with spi.Spi(my_chip, {}) as schip:
+    #             schip.check_spi(2)
+    #     finally:
+    #         # Reawaken ARC FW
+    #         my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE0"], wait_for_done=False, timeout=0.1)
+    #         time.sleep(0.1)
 
 def main():
     # Install sigint handler
@@ -379,19 +399,21 @@ def main():
     )
     parser.add_argument('--force', default=False, action="store_true", help='Force update the ROM')
     parser.add_argument('--fw-tar', default='ttfw.tar.gz', help='Path to the firmware tarball')
-    if not IS_PYINSTALLER_BIN:
-        parser.add_argument('--read', default=False, action="store_true", help='Prints a summary of the SPI contents')
-        parser.add_argument('--configure', default=False, action="store_true", help='Flashes the spi')
-        parser.add_argument('--fw-only', default=False, action="store_true", help='Flashes only the fw')
-        parser.add_argument('--skip-voltage-change',
-                            default=False,
-                            action="store_true",
-                            help='Skips voltage switching for SPI programming')
-        parser.add_argument(
-            '--external',
-            action='store_true',
-            help='Run the external version when T6PY_RELEASE=0. External is default when T6PY_RELEASE=1.')
+    # if not IS_PYINSTALLER_BIN:
+        # parser.add_argument('--read', default=False, action="store_true", help='Prints a summary of the SPI contents')
+        # parser.add_argument('--configure', default=False, action="store_true", help='Flashes the spi')
+        # parser.add_argument('--fw-only', default=False, action="store_true", help='Flashes only the fw')
+    parser.add_argument('--skip-voltage-change',
+                        default=False,
+                        action="store_true",
+                        help='Skips voltage switching for SPI programming')
+        # parser.add_argument(
+        #     '--external',
+        #     action='store_true',
+        #     help='Run the external version when T6PY_RELEASE=0. External is default when T6PY_RELEASE=1.')
     args = parser.parse_args()
+
+    args.external = True
 
     try:
         tar = tarfile.open(args.fw_tar, "r")
@@ -429,68 +451,16 @@ def main():
         if dev.as_gs() is None:
             print("Came across non GS chip, skipping")
             continue
-        init_mapping(dev)
+
+        board_type = dev.as_gs().pci_board_type()
+
+        # init_mapping(dev)
         init_fw_defines(dev)
 
         print(f"\nNow checking device {dev}:\n")
 
-        chip = HackChip(dev)
-
-        handle_args(chip, tar, args)
-
-@dataclass
-class HackAxi:
-    chip: HackChip
-    mapping: dict
-
-    def read32(self, addr: str) -> int:
-        it = self.mapping
-        for i in addr.split("."):
-            it = it[i]
-        return self.chip.axi_read32(it)
-
-    def write32(self, addr: str, value: int):
-        it = self.mapping
-        for i in addr.split("."):
-            it = it[i]
-        self.chip.axi_write32(it, value)
-
-class HackDict(dict):
-    def __init__(self, offset, *args, **kwargs):
-        self.offset = offset
-        super().__init__(*args, **kwargs)
-
-    def __getitem__(self, item):
-        return super().__getitem__(item)["Address"] + self.offset
-
-    def get(self, item):
-        return super().__getitem__(item)
-
-@dataclass
-class HackChip:
-    chip: Chip
-
-    @property
-    def AXI(self) -> HackAxi:
-        if not hasattr(self, "_AXI"):
-            self._AXI = HackAxi(self, {
-                "ARC_CSM": HackDict(0x1FE80000, safe_load(get_chip_data(self.chip, "csm.yaml"))),
-                "ARC_RESET": HackDict(0x1FF30000, safe_load(get_chip_data(self.chip, "reset.yaml"))),
-                "ARC_EFUSE": HackDict(0x1FF40000, safe_load(get_chip_data(self.chip, "efuse.yaml"))),
-                "ARC_SPI": HackDict(0x1FF70000, safe_load(get_chip_data(self.chip, "spi.yaml")))
-            })
-        return self._AXI
-
-    def axi_read32(self, addr: int) -> int:
-        return self.chip.axi_read32(addr)
-        # return self.chip.as_gs().pci_axi_read32(addr)
-
-    def axi_write32(self, addr: int, value: int):
-        return self.chip.axi_write32(addr, value)
-        # self.chip.as_gs().pci_axi_write32(addr, value)
-
-    def arc_msg(self, *args, **kwargs):
-        return self.chip.arc_msg(*args, **kwargs)
+        chip = HackChip(dev, board_type)
+        handle_args(chip, tar, manifest.get("bundle_version", {}), args)
 
 if __name__ == '__main__':
     main()

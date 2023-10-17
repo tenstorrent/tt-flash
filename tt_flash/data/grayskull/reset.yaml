@@ -1,0 +1,12 @@
+GPIO2_PAD_TRIEN_CNTL:
+  Address:          0x0240
+
+GPIO2_PAD_RXEN_CNTL:
+  Address:          0x024C
+
+GPIO2_PAD_DRV_CNTL:
+  Address:          0x0250
+
+SPI_CNTL:
+  Address:          0x00F8
+
