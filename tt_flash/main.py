@@ -393,7 +393,12 @@ def main():
             help='Run the external version when T6PY_RELEASE=0. External is default when T6PY_RELEASE=1.')
     args = parser.parse_args()
 
-    tar = tarfile.open(args.fw_tar, "r")
+    try:
+        tar = tarfile.open(args.fw_tar, "r")
+    except Exception as e:
+        print( "Opening of {} failed with - {}\n\n---\n".format( args.fw_tar, e ) )
+        parser.print_help()
+        sys.exit(1)
 
     manifest_data = tar.extractfile("./manifest.json")
     if manifest_data is None:
