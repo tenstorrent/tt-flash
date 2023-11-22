@@ -38,7 +38,7 @@ setup(
     install_requires=[
         "pyyaml",
         "tabulate",
-        "pyluwen",
+        "pyluwen @ git+https://github.com/tenstorrent/luwen.git#subdirectory=crates/pyluwen",
     ],
     entry_points={
         "console_scripts": [
