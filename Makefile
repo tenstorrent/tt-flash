@@ -7,10 +7,9 @@ LUWEN_DIR ?= $${HOME}/work/luwen
 
 .PHONY: build
 build:
-	${PYTHON} -m venv my-env
-	. ./my-env/bin/activate && python -m pip install --upgrade pip
-	. ./my-env/bin/activate && python -m pip install --upgrade -v --ignore-installed "pyluwen @ file://${LUWEN_DIR}/crates/pyluwen"
-	. ./my-env/bin/activate && python -m pip install --upgrade -ve .
+	${PYTHON} -m venv .env
+	. ./.env/bin/activate && python -m pip install --upgrade pip
+	. ./.env/bin/activate && python -m pip install --upgrade --ignore-installed -ve .
 
 .PHONY: release
 release:
@@ -21,4 +20,4 @@ release:
 
 .PHONY: clean
 clean:
-	rm -rf my-env
+	rm -rf .env

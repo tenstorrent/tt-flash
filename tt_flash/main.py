@@ -20,7 +20,7 @@ from typing import Callable, Optional
 from yaml import safe_load
 
 from tt_flash import utility
-from tt_flash.comms import i2c, spi
+from tt_flash.comms import spi
 from tt_flash.error import TTError
 
 from pyluwen import PciChip as Chip
@@ -187,11 +187,6 @@ TAG_HANDLERS: dict[str, Callable[[Chip, bytearray, int, int, int], bytearray]] =
 }
 
 def handle_args(my_chip: HackChip, fw_package: tarfile.TarFile, manifest_bundle_version: dict, args):
-    # if not args.skip_voltage_change:
-    #     voltage = read_voltage(my_chip)
-    #     if (voltage < 800):
-    #         set_voltage(my_chip, 800)
-
     if IS_PYINSTALLER_BIN or args.external:
         try:
             my_chip.arc_msg(fw_defines["MSG_TYPE_ARC_STATE3"], wait_for_done=True, timeout=0.1)
@@ -390,23 +385,23 @@ def main():
         # version=VERSION_STR,
         version=""
     )
-    parser.add_argument(
-        '--interface',
-        type=str,
-        default='all',
-        help=
-        'For multi-card systems "all" (default) iterates through all cards. "pci:0", "pci:1", etc. acts on a single card'
-    )
+    #parser.add_argument(
+    #    '--interface',
+    #    type=str,
+    #    default='all',
+    #    help=
+    #    'For multi-card systems "all" (default) iterates through all cards. "pci:0", "pci:1", etc. acts on a single card'
+    #)
     parser.add_argument('--force', default=False, action="store_true", help='Force update the ROM')
     parser.add_argument('--fw-tar', default='ttfw.tar.gz', help='Path to the firmware tarball')
     # if not IS_PYINSTALLER_BIN:
         # parser.add_argument('--read', default=False, action="store_true", help='Prints a summary of the SPI contents')
         # parser.add_argument('--configure', default=False, action="store_true", help='Flashes the spi')
         # parser.add_argument('--fw-only', default=False, action="store_true", help='Flashes only the fw')
-    parser.add_argument('--skip-voltage-change',
-                        default=False,
-                        action="store_true",
-                        help='Skips voltage switching for SPI programming')
+    #parser.add_argument('--skip-voltage-change',
+    #                    default=False,
+    #                    action="store_true",
+    #                    help='Skips voltage switching for SPI programming')
         # parser.add_argument(
         #     '--external',
         #     action='store_true',
