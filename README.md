@@ -1,15 +1,17 @@
 # tt-flash
 
-
+This is a utility to flash firmware blobs to tenstorrent devices, currently only Grayskull boards are supported, detected Wormhole devices will be skipped.
 
 ## Getting started
 
 ### To Build from git:
 
-- Requirements
-    - luwen library (specifically pyluwen)
-        - pre-installed
-        - rust compiler and ability to compile rust
+Install and source rust to build the luwen library
+
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
 
 #### Optional
 ```
@@ -18,27 +20,24 @@ source venv/bin/activate
 ```
 #### Required
 ```
-pip install -r requirements.txt
 pip install .
 ```
 
-### Help text (may not be up to date)
+or for users who would like to edit the code without re-building
+
 ```
-usage: tt-flash [-h] [-v] [--interface INTERFACE] [--force] [--fw-tar FW_TAR] [--read] [--configure] [--fw-only] [--skip-voltage-change] [--external]
+pip install --editable .
+```
+
+### Help text 
+```
+usage: tt-flash [-h] [-v] [--force] [--fw-tar FW_TAR] 
 
 options:
   -h, --help            show this help message and exit
   -v, --version         show program's version number and exit
-  --interface INTERFACE
-                        For multi-card systems "all" (default) iterates through all cards. "pci:0", "pci:1", etc. acts on a single card
   --force               Force update the ROM
   --fw-tar FW_TAR       Path to the firmware tarball
-  --read                Prints a summary of the SPI contents
-  --configure           Flashes the spi
-  --fw-only             Flashes only the fw
-  --skip-voltage-change
-                        Skips voltage switching for SPI programming
-  --external            Run the external version when T6PY_RELEASE=0. External is default when T6PY_RELEASE=1.
 ```
 
 ### Typical usage

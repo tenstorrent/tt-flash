@@ -1,7 +1,7 @@
 [project]
-name = "tt-smi"
+name = "tt-flash"
 version = "1.0.0"
-description = "ncurses based hardware monitoring for Tenstorrent silicon"
+description = "Utility to flash firmware blobs to tt devices"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {file = "LICENSE"}
