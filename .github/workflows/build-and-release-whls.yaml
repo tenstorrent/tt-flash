@@ -38,10 +38,18 @@ jobs:
         run: |
           python -m build
 
-      - name: Upload Artifacts
+      - name: Rename wheel
+        run: |
+          RELEASE_TAG=${GITHUB_REF#refs/tags/v}
+          PYTHON_VERSION=$(echo ${{ matrix.python-version }} | sed 's/\.//')
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCHITECTURE=${{ matrix.architecture }}
+          mv dist/*.whl "dist/tt_flash-${RELEASE_TAG}-py${PYTHON_VERSION}-none-${OS}_${ARCHITECTURE}.whl"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: tt-flash-whl-${{ matrix.python-version }}-${{ matrix.architecture }}
+          name: tt_flash-whl-${{ matrix.python-version }}-${{ matrix.architecture }}
           path: |
             ./dist/*.whl
 
