@@ -2,6 +2,10 @@
 
 This is a utility to flash firmware blobs to tenstorrent devices, currently only Grayskull boards are supported, detected Wormhole devices will be skipped.
 
+## Official Repository
+
+[https://github.com/tenstorrent/tt-flash](https://github.com/tenstorrent/tt-flash)
+
 ## Getting started
 
 ### To Build from git:
