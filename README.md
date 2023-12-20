@@ -49,8 +49,15 @@ options:
 tt-flash --fw-tar <firmware tar file path goes here>
 ```
 
+#### Grayskull Note:
+If you are using a Grayskull based card, the card itself does not have an on-board reset mechanism, and you will need to reboot to have the new firmware apply.
+
 ### Firmware files
-Firmware files are licensed and distributed independently of tt-flash, as this is just the system to deal with the actual flashing of the images.  For Tenstorrent firmware images please see the Tenstorrent website for a pointer on where these would be, or look in the Tenstorrent Github organizations for the appropriate repository.
+Firmware files are licensed and distributed independently of tt-flash, as this is just the system to deal with the actual flashing of the images.
+
+| Product Line | Firmware repository |
+| --- | --- |
+| Grayskull | [https://github.com/tenstorrent/tt-firmware-gs](https://github.com/tenstorrent/tt-firmware-gs)
 
 ## License
 
