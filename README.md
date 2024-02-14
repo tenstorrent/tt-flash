@@ -10,26 +10,27 @@ This is a utility to flash firmware blobs to tenstorrent devices, currently only
 
 ### To Build from git:
 
-Install and source rust to build the luwen library
-
-```
+#### Install Rust
+```sh
+# Install rust to build the luwen library
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 ```
 
-#### Optional
-```
-pip -m venv venv
+#### Clone and Build
+
+```sh
+# Clone tt-flash repo
+git clone https://github.com/tenstorrent/tt-flash.git tt-flash
+cd tt-flash
+
+# Optional: Setup a Python virtual environment
+python3 -m venv venv
 source venv/bin/activate
-```
-#### Required
-```
+
+# Install tt-flash
 pip install .
-```
-
-or for users who would like to edit the code without re-building
-
-```
+# or for users who would like to edit the code without re-building
 pip install --editable .
 ```
 
