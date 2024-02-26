@@ -9,7 +9,7 @@ LUWEN_DIR ?= $${HOME}/work/luwen
 build:
 	${PYTHON} -m venv .env
 	. ./.env/bin/activate && python -m pip install --upgrade pip
-	. ./.env/bin/activate && python -m pip install --upgrade --ignore-installed -ve .
+	. ./.env/bin/activate && python -m pip install --upgrade --ignore-installed -ve .[dev]
 
 .PHONY: release
 release:
