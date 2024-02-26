@@ -4,3 +4,4 @@
 MSG_TYPE_ARC_STATE0:                      0xa0
 MSG_TYPE_ARC_STATE3:                      0xa3
 MSG_TYPE_FW_VERSION:                      0xb9
+MSG_TRIGGER_SPI_COPY_LtoR:                0x50

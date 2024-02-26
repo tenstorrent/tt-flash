@@ -1,6 +1,6 @@
 [project]
 name = "tt-flash"
-version = "1.0.0"
+version = "2.0.0"
 description = "Utility to flash firmware blobs to tt devices"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -25,8 +25,15 @@ classifiers = [
 ]
 dependencies = [
   "pyyaml == 6.0.1",
-  "pyluwen @ git+https://github.com/tenstorrent/luwen.git@v0.1.0#subdirectory=crates/pyluwen",
-  "tabulate == 0.9.0"
+  "pyluwen @ git+https://github.com/tenstorrent/luwen.git@v0.3.0#subdirectory=crates/pyluwen",
+  "tabulate == 0.9.0",
+  "tomli == 2.0.1; python_version < '3.11'",
+
+  "tt-tools-common @ git+https://github.com/tenstorrent/tt-tools-common",
+]
+
+optional-dependencies.dev = [
+  "black == 23.11.0"
 ]
 
 [project.urls]
