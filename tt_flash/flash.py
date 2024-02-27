@@ -201,7 +201,9 @@ def flash_chip(
                 arg1=0,
             )[0]
 
-            if running_bundle_version == 0xDEAD:
+            # There is a version of the firmware that doesn't correctly return an error when setting arg0 to an unknown option.
+            # The running_bundle_version and fw_version can never be the same (as mandated by the version formatting) so I can safely check to see if they are the same when checking for this older FW.
+            if running_bundle_version == 0xDEAD or fw_version == running_bundle_version:
                 old_fw = True
             else:
                 spi_bundle_version = chip.arc_msg(
@@ -251,7 +253,7 @@ def flash_chip(
                 )
             else:
                 raise TTError(
-                    f"Bundle fwId ({new_bundle_version[0]}) does not match expected fwId ({component}); {new_bundle_version} != {component}"
+                    f"Bundle fwId ({new_bundle_version[0]}) does not match expected fwId ({component}); {new_bundle_version} != {bundle_version}"
                 )
 
         print(
