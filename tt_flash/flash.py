@@ -150,6 +150,7 @@ def flash_chip(
     boardname: str,
     fw_package: tarfile.TarFile,
     force: bool,
+    skip_missing_fw: bool = False
 ) -> int:
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
@@ -313,9 +314,13 @@ def flash_chip(
 
     boardname_to_display = change_to_public_name(boardname)
     if image is None and mask is None:
-        raise TTError(
-            f"Could not find flash data for {boardname_to_display} in tarfile"
-        )
+        if skip_missing_fw:
+            print(f"Could not find flash data for {boardname_to_display} in tarfile")
+            return 1
+        else:
+            raise TTError(
+                f"Could not find flash data for {boardname_to_display} in tarfile"
+            )
     elif image is None:
         raise TTError(
             f"Could not find flash image for {boardname_to_display} in tarfile; expected to see {boardname}/image.bin"
