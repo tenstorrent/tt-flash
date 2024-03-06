@@ -150,7 +150,7 @@ def flash_chip(
     boardname: str,
     fw_package: tarfile.TarFile,
     force: bool,
-    skip_missing_fw: bool = False
+    skip_missing_fw: bool = False,
 ) -> int:
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
@@ -316,7 +316,7 @@ def flash_chip(
     if image is None and mask is None:
         if skip_missing_fw:
             print(f"Could not find flash data for {boardname_to_display} in tarfile")
-            return 1
+            return 0
         else:
             raise TTError(
                 f"Could not find flash data for {boardname_to_display} in tarfile"
@@ -396,20 +396,66 @@ def flash_chip(
 
             curr_addr = curr_stop
 
-    print("Programming chip")
+    writes.sort(key=lambda x: x[0])
+
+    write = bytearray()
+    last_addr = 0
+    for addr, data in writes:
+        write.extend([0xFF] * (addr - last_addr))
+        write.extend(data)
+        last_addr = addr + len(data)
 
     # Install sigint handler
     def signal_handler(sig, frame):
         print("Ctrl-C: this process should not be interrupted")
 
-    original_sigint_handler = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, signal_handler)
+    def perform_write(chip, write):
+        original_sigint_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal_handler)
 
-    try:
-        for addr, data in writes:
-            chip.spi_write(addr, data)
-    finally:
-        signal.signal(signal.SIGINT, original_sigint_handler)
+        try:
+            chip.spi_write(0, write)
+        finally:
+            signal.signal(signal.SIGINT, original_sigint_handler)
+
+    def perform_verify(chip, write):
+        original_sigint_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        try:
+            base_data = chip.spi_read(0, len(write))
+
+            if base_data != write:
+                print(
+                    f"Verifcation Failed; you probably don't want to reset or reboot until this check passes"
+                )
+                print("addr, actual, expected")
+                for index, (a, b) in enumerate(zip(base_data, write)):
+                    if a != b:
+                        print(hex(index), hex(a), hex(b))
+                return 1
+        finally:
+            signal.signal(signal.SIGINT, original_sigint_handler)
+
+        return 0
+
+    print("Programming chip")
+
+    perform_write(chip, write)
+
+    print("Verifying the flash")
+
+    if perform_verify(chip, write) != 0:
+        print("Attempting to program one more time")
+        perform_write(chip, write)
+
+        print("Trying to verify again")
+        if perform_verify(chip, write) != 0:
+            print(
+                "Second verification failed, please try one more time after a reset, if you still see failures you may need to RMA this board."
+            )
+
+    print("Verification complete")
 
     error = False
     if boardname == "NEBULA_X2":
