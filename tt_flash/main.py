@@ -68,7 +68,13 @@ def parse_args():
 
     flash = subparsers.add_parser("flash")
     flash.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
-    flash.add_argument("--skip-missing-fw", help="If the fw packages doesn't contain the fw for a detected board, continue flashing", default=False, action="store_true", required=False)
+    flash.add_argument(
+        "--skip-missing-fw",
+        help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
+        default=False,
+        action="store_true",
+        required=False,
+    )
     flash.add_argument(
         "--force", default=False, action="store_true", help="Force update the ROM"
     )
@@ -187,11 +193,7 @@ def main():
             print(f"\nNow checking device {dev}:\n")
 
             rc += flash_chip(
-                dev,
-                boardname,
-                tar,
-                args.force,
-                skip_missing_fw=args.skip_missing_fw
+                dev, boardname, tar, args.force, skip_missing_fw=args.skip_missing_fw
             )
 
         return rc
