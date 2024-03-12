@@ -17,7 +17,7 @@ from tt_flash.chip import TTChip, GsChip
 from tt_flash.error import TTError
 from tt_flash.utility import change_to_public_name
 
-from tt_tools_common.wh_reset import WHChipReset
+from tt_tools_common.reset_common.wh_reset import WHChipReset
 
 
 def rmw_param(

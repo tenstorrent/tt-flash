@@ -1,6 +1,6 @@
 [project]
 name = "tt-flash"
-version = "2.0.5"
+version = "2.0.6"
 description = "Utility to flash firmware blobs to tt devices"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -33,7 +33,7 @@ dependencies = [
   # Using the 1.4.0 version because 3.8 will be our msv until it is eol.
   "importlib-metadata == 1.4.0; python_version < '3.8'",
 
-  "tt-tools-common @ git+https://github.com/tenstorrent/tt-tools-common",
+  "tt-tools-common @ git+https://github.com/tenstorrent/tt-tools-common.git@v1.3.0",
 ]
 
 optional-dependencies.dev = [
