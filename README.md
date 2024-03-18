@@ -70,18 +70,18 @@ pip install --editable .
 
 ### Help text 
 ```
-usage: tt-flash [-h] [-v] [--force] [--fw-tar FW_TAR] 
+usage: tt-flash [-h] [-v] [--force] [--fw-tar FW_BUNDLE] 
 
 options:
   -h, --help            show this help message and exit
   -v, --version         show program's version number and exit
   --force               Force update the ROM
-  --fw-tar FW_TAR       Path to the firmware tarball
+  --fw-tar FW_BUNDLE       Path to the firmware bundle
 ```
 
 ## Typical usage
 ```
-tt-flash --fw-tar <firmware tar file path goes here>
+tt-flash --fw-tar <firmware bundle file path goes here>
 ```
 
 ### Grayskull Note:
