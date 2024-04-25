@@ -26,7 +26,7 @@ install things and deal with it's own library pathing.  If you aren't doing
 this as a system level install a virtual environment is recommended.
 
 ```
-pip -m venv venv
+python -m venv venv
 source venv/bin/activate
 ```
 
