@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from importlib.resources import path
+try:
+    from importlib.resources import files, as_file
+except (ModuleNotFoundError, ImportError):
+    from importlib_resources import files, as_file
 import sys
 from typing import Optional
 
 
 # Returns the root path of the package, so we can access data files and such
 def package_root_path():
-    return path("tt_flash", "")
+    return as_file(files("tt_flash"))
 
 
 # Get path of this script. 'frozen' means packaged with pyinstaller.

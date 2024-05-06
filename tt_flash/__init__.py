@@ -5,7 +5,10 @@
 # This will get the semantic version from the current pyproject package definition.
 
 from typing import Any
-import importlib.metadata
+try:
+    import importlib.metadata as importlib_metadata
+except ModuleNotFoundError:
+    import importlib_metadata
 from pathlib import Path
 
 __package_version = "unknown"
@@ -24,16 +27,16 @@ def __get_package_version() -> str:
     try:
         # Try to get the version of the current package if
         # it is running from a distribution.
-        __package_version = importlib.metadata.version("tt-flash")
+        __package_version = importlib_metadata.version("tt-flash")
     except importlib.metadata.PackageNotFoundError:
         # Fall back on getting it from a local pyproject.toml.
         # This works in a development environment where the
         # package has not been installed from a distribution.
         try:
             # This gets added to the standard library as tomllib in Python3.11
-            # therefore we expect to hit an ImportError.
+            # therefore we expect to hit a ModuleNotFoundError.
             import tomli as toml
-        except ImportError:
+        except ModuleNotFoundError:
             import tomllib as toml
 
         pyproject_toml_file = Path(__file__).parent.parent / "pyproject.toml"
