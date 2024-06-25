@@ -3,18 +3,21 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import argparse
 import datetime
 import os
 import json
 import sys
 import tarfile
+from pathlib import Path
 
 import tt_flash
 from tt_flash import utility
 from tt_flash.error import TTError
 from tt_flash.version import extract_fw_versions
-from tt_flash.flash import flash_chip
+from tt_flash.flash import flash_chips
 
 from .chip import detect_local_chips
 
@@ -63,10 +66,12 @@ def parse_args():
         action="version",
         version=VERSION_STR,
     )
+    parser.add_argument("--sys-config", help="Path to the pre generated sys-config json", default=None, type=Path)
 
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
     flash = subparsers.add_parser("flash")
+    flash.add_argument("--sys-config", help="Path to the pre generated sys-config json", default=None, type=Path)
     flash.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
     flash.add_argument(
         "--skip-missing-fw",
@@ -124,6 +129,45 @@ def parse_args():
     return parser, parser.parse_args(args=cmd_args)
 
 
+def load_sys_config(path: Optional[Path]) -> Optional[dict]:
+    if path is None:
+        # Do a search for a default config
+        print("Searching for default sys-config path")
+        global_path = Path("/etc/tenstorrent/config.json")
+        if global_path.exists():
+            print(f"Loaded config from {global_path}")
+            return json.load(global_path.open())
+        else:
+            print(f"Checking {global_path}: not found")
+
+        local_path = Path("~/.config/tenstorrent/config.json")
+        if local_path.exists():
+            print(f"Loaded config from {local_path}")
+            return json.load(local_path.open())
+        else:
+            print(f"Checking {local_path}: not found")
+
+        print("Could not find config in default search locations, either pass it in manually or generate one")
+        print("Warning: continuing without sys-config, galaxy systems will not be reset")
+
+        return None
+    else:
+        print(f"Loaded config from {path}")
+        return json.load(open(path))
+
+def get_devices_from_config(config: dict) -> list[Chip]:
+    pci_indexes = []
+    pci_indexes.extend(config.get("gs_tensix_reset", {}).get("pci_index", []))
+    pci_indexes.extend(config.get("wh_tensix_reset", {}).get("pci_index", []))
+
+    mobo_data = []
+    for mobo in config.get("wh_mobo_reset", {}):
+        if "MOBO NAME" in mobo.get("mobo", {}):
+            mobo_data.append(mobo)
+
+def config_reset(config: dict):
+    pass
+
 def main():
     parser, args = parse_args()
 
@@ -153,6 +197,8 @@ def main():
     if int_version is None:
         raise TTError(f"Invalid version ({version}) in {args.fw_tar}/manifest.json")
 
+    config = load_sys_config(args.sys_config)
+
     devices = detect_local_chips(ignore_ethernet=True)
 
     if args.command == "version":
@@ -169,34 +215,15 @@ def main():
                 f"Unsupported version ({version}) this flash program only supports flashing pre 2.0 packages"
             )
 
-        rc = 0
-        for dev in devices:
-            # Get the board type, first we will try to get the board_type via pci.
-            # This will fail in two cases
-            # 1) the board is completely broken and we will need to
-            # reflash the board id (hopefully we still have enough access to fix the issue)
-            # 2) we are using something like jtag in which case we'll probably want to probe the board
-            #
-            # For now I think we can ignore both of these problems but the fix for 1) would be to allow the user
-            # to specify a board_id to overwrite the primary one with. Which could be problematic... the fix
-            # for 2) would be to read the board id back from the spi. The fix for 2) will come when I add
-            # version readback support
+        mobos = []
+        if config is not None:
+            for mobo_dict in config.get("wh_mobo_reset", {}):
+                # Only add the mobos that have a name
+                if "mobo" in mobo_dict:
+                    if "MOBO NAME" not in mobo_dict["mobo"]:
+                        mobos.append(mobo_dict["mobo"])
 
-            try:
-                boardname = utility.get_board_type(dev.board_type(), from_type=True)
-            except:
-                boardname = None
-
-            if boardname is None:
-                raise TTError(f"Did not recognize board type for {dev}")
-
-            print(f"\nNow checking device {dev}:\n")
-
-            rc += flash_chip(
-                dev, boardname, tar, args.force, skip_missing_fw=args.skip_missing_fw
-            )
-
-        return rc
+        return flash_chips(config, devices, mobos, tar, args.force, skip_missing_fw=args.skip_missing_fw)
     else:
         raise TTError(f"No handler for command {args.command}.")
 
