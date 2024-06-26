@@ -174,9 +174,10 @@ def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhCh
     chip_count = 0
     block_count = 0
     last_draw = time.time()
+    did_draw = False
 
     def chip_detect_callback(status):
-        nonlocal chip_count, last_draw, block_count
+        nonlocal chip_count, last_draw, block_count, did_draw
 
         if status.new_chip():
             chip_count += 1
@@ -185,6 +186,7 @@ def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhCh
         chip_count = max(chip_count, 0)
 
         if sys.stdout.isatty():
+            did_draw = True
             current_time = time.time()
             if current_time - last_draw > 0.1:
                 last_draw = current_time
@@ -224,6 +226,9 @@ def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhCh
             output.append(WhChip(device.as_wh()))
         else:
             raise ValueError("Did not recognize board")
+
+    if not did_draw:
+        print(f"\tDetected Chips: {chip_count}")
 
     return output
 

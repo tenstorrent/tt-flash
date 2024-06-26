@@ -22,6 +22,7 @@ from tt_flash.utility import change_to_public_name, get_board_type
 
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
+from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
 
 def rmw_param(
     chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
@@ -126,8 +127,9 @@ TAG_HANDLERS: dict[str, Callable[[TTChip, bytearray, int, int, int], bytearray]]
 }
 
 
-def live_countdown(wait_time: float, name: str):
-    print(f"{name} started, will wait {wait_time} seconds for it to complete")
+def live_countdown(wait_time: float, name: str, print_initial: bool = True):
+    if print_initial:
+        print(f"{name} started, will wait {wait_time} seconds for it to complete")
 
     # If True then we are running in an interactive environment
     if sys.stdout.isatty():
@@ -227,7 +229,7 @@ def flash_chip(
         if exception is None:
             if force:
                 print(
-                    "Looks like you are running a very old set of fw, assuming that it needs an update"
+                    "\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update"
                 )
             else:
                 raise TTError(
@@ -236,7 +238,7 @@ def flash_chip(
         else:
             if force:
                 print(
-                    f"Hit error {exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
+                    f"\t\t\tHit error {exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
                 )
             else:
                 raise TTError(
@@ -253,7 +255,7 @@ def flash_chip(
         if component != new_bundle_version[0]:
             if force:
                 print(
-                    "Found unexpected bundle version, however you ran with force so we are barreling onwards"
+                    "\t\t\tFound unexpected bundle version, however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
@@ -261,7 +263,7 @@ def flash_chip(
                 )
 
         print(
-            f"ROM version is: {bundle_version}. tt-flash version is: {new_bundle_version}"
+            f"\t\t\tROM version is: {bundle_version}. tt-flash version is: {new_bundle_version}"
         )
     if force:
         print("Forced ROM update requested. ROM will now be updated.")
@@ -269,23 +271,23 @@ def flash_chip(
         if spi_bundle_version is not None and spi_bundle_version >= new_bundle_version:
             if spi_bundle_version == new_bundle_version:
                 print(
-                    "ROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
             else:
                 print(
-                    "ROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
             return 0
         else:
             print(
-                "Was not able to fetch current firmware information, assuming that it needs an update"
+                "\t\t\tWas not able to fetch current firmware information, assuming that it needs an update"
             )
     elif (
         bundle_version >= new_bundle_version
         and spi_bundle_version == new_bundle_version
     ):
         print(
-            "ROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+            "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
         )
         return 0
     elif bundle_version >= new_bundle_version and running_bundle_version not in [
@@ -669,7 +671,7 @@ def flash_chip_stage1(
         if exception is None:
             if force:
                 print(
-                    "Looks like you are running a very old set of fw, assuming that it needs an update"
+                    "\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update"
                 )
             else:
                 raise TTError(
@@ -678,14 +680,14 @@ def flash_chip_stage1(
         else:
             if force:
                 print(
-                    f"Hit error {exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
+                    f"\t\t\tHit error {exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
                 )
             else:
                 raise TTError(
                     f"Hit error {exception} while trying to determine running firmware. If you know what you are doing you may still update by re-rerunning using the --force flag."
                 )
 
-        print(f"Now flashing tt-flash version: {manifest.bundle_version}")
+        print(f"\t\t\tNow flashing tt-flash version: {manifest.bundle_version}")
     elif running_bundle_version is not None:
         patch = running_bundle_version & 0xFF
         minor = (running_bundle_version >> 8) & 0xFF
@@ -695,7 +697,7 @@ def flash_chip_stage1(
         if component != manifest.bundle_version[0]:
             if force:
                 print(
-                    "Found unexpected bundle version, however you ran with force so we are barreling onwards"
+                    "\t\t\tFound unexpected bundle version, however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
@@ -703,41 +705,41 @@ def flash_chip_stage1(
                 )
 
         print(
-            f"ROM version is: {bundle_version}. tt-flash version is: {manifest.bundle_version}"
+            f"\t\t\tROM version is: {bundle_version}. tt-flash version is: {manifest.bundle_version}"
         )
     if force:
-        print("Forced ROM update requested. ROM will now be updated.")
+        print("\t\t\tForced ROM update requested. ROM will now be updated.")
     elif bundle_version is None:
         if spi_bundle_version is not None and spi_bundle_version >= manifest.bundle_version:
             if spi_bundle_version == manifest.bundle_version:
                 print(
-                    "ROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
             else:
                 print(
-                    "ROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
             return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
         else:
             print(
-                "Was not able to fetch current firmware information, assuming that it needs an update"
+                "\t\t\tWas not able to fetch current firmware information, assuming that it needs an update"
             )
     elif (
         bundle_version >= manifest.bundle_version
         and spi_bundle_version == manifest.bundle_version
     ):
         print(
-            "ROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+            "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
         )
         return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
     elif bundle_version >= manifest.bundle_version and running_bundle_version not in [
         0xFFFFFFFF,
         0xDEAD,
     ]:
-        print("ROM does not need to be updated.")
+        print("\t\t\tROM does not need to be updated.")
         return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
     else:
-        print("tt-flash version > ROM version. ROM will now be updated.")
+        print("\t\t\ttt-flash version > ROM version. ROM will now be updated.")
 
     try:
         image = fw_package.extractfile(f"./{boardname}/image.bin")
@@ -753,7 +755,7 @@ def flash_chip_stage1(
     boardname_to_display = change_to_public_name(boardname)
     if image is None and mask is None:
         if skip_missing_fw:
-            print(f"Could not find flash data for {boardname_to_display} in tarfile")
+            print(f"\t\t\tCould not find flash data for {boardname_to_display} in tarfile")
             return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
         else:
             raise TTError(
@@ -844,7 +846,7 @@ def flash_chip_stage1(
         last_addr = addr + len(data)
 
     if boardname in ["NEBULA_X1", "NEBULA_X2"]:
-        print("Checking if board can be automatically reset")
+        print("\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible")
         can_reset = False
 
         try:
@@ -855,11 +857,11 @@ def flash_chip_stage1(
             )
             if can_reset:
                 print(
-                    "Board can be reset; the reset will be triggered if the reset of the flashed chips healthy"
+                    f"\t\t\t\t{CMD_LINE_COLOR.GREEN}Success:{CMD_LINE_COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
                 )
         except Exception as e:
             print(
-                "Board cannot be reset: Failed to get the current firmware versions"
+                f"\t\t\t\t{CMD_LINE_COLOR.YELLOW}Fail:{CMD_LINE_COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
             )
             can_reset = False
     else:
@@ -882,7 +884,7 @@ def flash_chip_stage2(
 ) -> Optional[bool]:
     # Install sigint handler
     def signal_handler(sig, frame):
-        print("Ctrl-C: this process should not be interrupted")
+        print("Ctrl-C Caught: this process should not be interrupted")
 
     def perform_write(chip, write):
         original_sigint_handler = signal.getsignal(signal.SIGINT)
@@ -901,6 +903,7 @@ def flash_chip_stage2(
             base_data = chip.spi_read(0, len(write))
 
             if base_data != write:
+                # NOTE(drosen): Figure out what to do in this case (recommend RMA?)
                 print(
                     f"Verifcation Failed; you probably don't want to reset or reboot until this check passes"
                 )
@@ -914,28 +917,53 @@ def flash_chip_stage2(
 
         return 0
 
-    print("Programming chip")
+    if sys.stdout.isatty():
+        print("\t\t\tWriting new firmware... (this may take up to 1 minute)", end="", flush=True)
+    else:
+        print("\t\t\tWriting new firmware... (this may take up to 1 minute)")
 
     perform_write(chip, data.write)
 
-    print("Verifying the flash")
+    if sys.stdout.isatty():
+        print("\r\033[K", end="")
+    print(f"\t\t\tWriting new firmware... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}")
+
+    print("\t\t\tVerifying flashed firmware... (this may also take up to 1 minute)", end="", flush=True)
+    if not sys.stdout.isatty():
+        print()
 
     if perform_verify(chip, data.write) != 0:
-        print("Attempting to program one more time")
+        if sys.stdout.isatty():
+            print(f"\r\033[K", end="")
+        print(f"\t\t\tIntial verification: {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}")
+
+        print("\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)", end="", flush=True)
+        if not sys.stdout.isatty():
+            print()
+
         perform_write(chip, data.write)
 
-        print("Trying to verify again")
+        print("\t\t\tVerifying second flash attempt... (this may also take up to 1 minute)", end="", flush=True)
+        if not sys.stdout.isatty():
+            print()
+
         if perform_verify(chip, data.write) != 0:
+            if sys.stdout.isatty():
+                print(f"\r\033[K", end="")
+            # TODO(drosen): Should I really be this confident about an RMA?
             print(
-                "Second verification failed, please try one more time after a reset, if you still see failures you may need to RMA this board."
+                f"\t\t\tSecond verification {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}, please try one more time after a reset, if you still see failures (or the board falls of the pcie bus) you will need to RMA this board."
             )
             return None
 
-    print("Verification complete")
+
+    if sys.stdout.isatty():
+        print(f"\r\033[K", end="")
+    print(f"\t\t\tFirmware verification... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}")
 
     trigged_copy = False
     if data.idname == "NEBULA_X2":
-        print("This board is an n300, copying data over to the remote chip")
+        print("\t\t\tInitiating local to remote data copy")
 
         # There is a bug in m3 app version 5.8.0.1 where we can trigger a boot loop during the left to right copy.
         # In this condition we will disable the auto-reset before triggering the left to right copy.
@@ -949,18 +977,18 @@ def flash_chip_stage2(
                 triggered_reset_disable = True
             except Exception as e:
                 print(
-                    "Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
+                    f"\t\t\t{CMD_LINE_COLOR.BLUE}NOTE:{CMD_LINE_COLOR.ENDC} Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
                 )
                 return None
             if triggered_reset_disable:
-                live_countdown(1.0, "Disable m3 reset")
+                live_countdown(1.0, "\t\t\tDisable m3 reset")
 
         try:
             chip.arc_msg(chip.fw_defines["MSG_TRIGGER_SPI_COPY_LtoR"])
             trigged_copy = True
         except Exception as e:
             print(
-                "Failed to initiate left to right copy; please reset the host to reset the board and then rerun the flash with the --force flag to complete flash."
+                f"\t\t\t{CMD_LINE_COLOR.BLUE}NOTE:{CMD_LINE_COLOR.ENDC} Failed to initiate left to right copy; please reset the host to reset the board and then rerun the flash with the --force flag to complete flash."
             )
             return None
 
@@ -974,6 +1002,9 @@ class Manifest:
 def verify_package(fw_package: tarfile.TarFile):
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
+        if sys.stdout.isatty():
+            # HACK(drosen): Would not have ended the last line with a '\n'
+            print("\n")
         raise TTError(
             "Could not find manifest in fw package, please check the the correct one was used."
         )
@@ -1004,11 +1035,21 @@ def flash_chips(
     force: bool,
     skip_missing_fw: bool = False,
 ):
-    print("Verifying devices can be flashed")
+    print(f"\t{CMD_LINE_COLOR.GREEN}Sub Stage:{CMD_LINE_COLOR.ENDC} VERIFY")
+    if sys.stdout.isatty():
+        print("\t\tVerifying fw-package can be flashed", end="", flush=True)
+    else:
+        print("\t\tVerifying fw-package can be flashed")
     manifest = verify_package(fw_package)
+
+    if sys.stdout.isatty():
+        print(f"\r\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}")
+    else:
+        print(f"\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}")
 
     to_flash = []
     for dev in devices:
+        print(f"\t\tVerifying {CMD_LINE_COLOR.BLUE}{dev}{CMD_LINE_COLOR.ENDC} can be flashed")
         try:
             boardname = get_board_type(dev.board_type(), from_type=True)
         except:
@@ -1019,10 +1060,13 @@ def flash_chips(
 
         to_flash.append(boardname)
 
+    print(f"\t{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} FLASH")
+
     flash_data = []
     flash_error = []
     needs_reset = []
     for (chip, boardname) in zip(devices, to_flash):
+        print(f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 1: {CMD_LINE_COLOR.BLUE}{chip}{CMD_LINE_COLOR.ENDC}")
         result = flash_chip_stage1(
             chip, boardname, manifest, fw_package, force, skip_missing_fw=skip_missing_fw
         )
@@ -1038,6 +1082,7 @@ def flash_chips(
 
     triggered_copy = False
     for (chip, data) in flash_data:
+        print(f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 2: {CMD_LINE_COLOR.BLUE}{chip} {{{data.name}}}{CMD_LINE_COLOR.ENDC}")
         result = flash_chip_stage2(chip, data)
         if result is None:
             rc += 1
@@ -1046,37 +1091,46 @@ def flash_chips(
 
     # If we flashed an X2 then we will wait for the copy to complete
     if triggered_copy:
-        live_countdown(15.0, "Remote copy")
-
-    if rc > 0:
-        return rc
-
-    # Reset boards if necessary
-    mobo_dict_list = []
-    if sys_config is not None:
-        for mobo_dict in sys_config.get("wh_mobo_reset", {}):
-            # Only add the mobos that have a name
-            if "mobo" in mobo_dict:
-                if "MOBO NAME" not in mobo_dict["mobo"] and mobo_dict["mobo"] in mobos:
-                    mobo_dict_list.append(mobo_dict)
-
-        if len(mobo_dict_list) > 0:
-            GalaxyReset().warm_reset_mobo(mobo_dict_list)
-            # The mobo reset will also reset all nb cards connected to the mobo.
-            # So we'll just remove them here to avoid setting them again
-            wh_link_pci_indices = sys_config["wh_link_reset"]["pci_index"]
-            for entry in mobo_dict_list:
-                if "nb_host_pci_idx" in entry.keys() and entry["nb_host_pci_idx"]:
-                    # remove the list of WH pcie index's from the reset list
-                    wh_link_pci_indices = list(
-                        set(wh_link_pci_indices) - set(entry["nb_host_pci_idx"])
-                    )
-                sys_config["wh_link_reset"]["pci_index"] = wh_link_pci_indices
-            needs_reset = [idx for idx in sys_config["wh_link_reset"]["pci_index"] if idx in needs_reset]
+        print(f"\t\tFlash and verification for all chips completed, will now wait for for n300 remote copy to complete...")
+        live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
     if len(needs_reset) > 0:
-        WHChipReset().full_lds_reset(pci_interfaces=needs_reset, reset_m3=True)
-        detect_chips()
+        print(f"{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} RESET")
 
-    return 0
+        if rc != 0:
+            print(f"\t\tErrors detected during flash, will skip automatic reset...")
+        else:
+            # Reset boards if necessary
+            mobo_dict_list = []
+            if sys_config is not None:
+                for mobo_dict in sys_config.get("wh_mobo_reset", {}):
+                    # Only add the mobos that have a name
+                    if "mobo" in mobo_dict:
+                        if "MOBO NAME" not in mobo_dict["mobo"] and mobo_dict["mobo"] in mobos:
+                            mobo_dict_list.append(mobo_dict)
+
+                if len(mobo_dict_list) > 0:
+                    GalaxyReset().warm_reset_mobo(mobo_dict_list)
+                    # The mobo reset will also reset all nb cards connected to the mobo.
+                    # So we'll just remove them here to avoid setting them again
+                    wh_link_pci_indices = sys_config["wh_link_reset"]["pci_index"]
+                    for entry in mobo_dict_list:
+                        if "nb_host_pci_idx" in entry.keys() and entry["nb_host_pci_idx"]:
+                            # remove the list of WH pcie index's from the reset list
+                            wh_link_pci_indices = list(
+                                set(wh_link_pci_indices) - set(entry["nb_host_pci_idx"])
+                            )
+                        sys_config["wh_link_reset"]["pci_index"] = wh_link_pci_indices
+                    needs_reset = [idx for idx in sys_config["wh_link_reset"]["pci_index"] if idx in needs_reset]
+
+            if len(needs_reset) > 0:
+                WHChipReset().full_lds_reset(pci_interfaces=needs_reset, reset_m3=True)
+                detect_chips()
+
+    if rc == 0:
+        print(f"{CMD_LINE_COLOR.GREEN}FLASH SUCCESS{CMD_LINE_COLOR.ENDC}")
+    elif rc == 0:
+        print(f"{CMD_LINE_COLOR.RED}FLASH FAILED{CMD_LINE_COLOR.ENDC}")
+
+    return rc
 

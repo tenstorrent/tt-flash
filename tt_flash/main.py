@@ -19,6 +19,8 @@ from tt_flash.error import TTError
 from tt_flash.version import extract_fw_versions
 from tt_flash.flash import flash_chips
 
+from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
+
 from .chip import detect_local_chips
 
 # Make version available in --help
@@ -132,23 +134,23 @@ def parse_args():
 def load_sys_config(path: Optional[Path]) -> Optional[dict]:
     if path is None:
         # Do a search for a default config
-        print("Searching for default sys-config path")
+        print("\tSearching for default sys-config path")
         global_path = Path("/etc/tenstorrent/config.json")
         if global_path.exists():
-            print(f"Loaded config from {global_path}")
+            print(f"\tLoaded config from {global_path}")
             return json.load(global_path.open())
         else:
-            print(f"Checking {global_path}: not found")
+            print(f"\tChecking {global_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}")
 
         local_path = Path("~/.config/tenstorrent/config.json")
         if local_path.exists():
-            print(f"Loaded config from {local_path}")
+            print(f"\tLoaded config from {local_path}")
             return json.load(local_path.open())
         else:
-            print(f"Checking {local_path}: not found")
+            print(f"\tChecking {local_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}")
 
-        print("Could not find config in default search locations, either pass it in manually or generate one")
-        print("Warning: continuing without sys-config, galaxy systems will not be reset")
+        print("\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one")
+        print(f"\t{CMD_LINE_COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CMD_LINE_COLOR.ENDC}")
 
         return None
     else:
@@ -197,8 +199,10 @@ def main():
     if int_version is None:
         raise TTError(f"Invalid version ({version}) in {args.fw_tar}/manifest.json")
 
+    print(f"{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} SETUP")
     config = load_sys_config(args.sys_config)
 
+    print(f"{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} DETECT")
     devices = detect_local_chips(ignore_ethernet=True)
 
     if args.command == "version":
@@ -210,6 +214,7 @@ def main():
         for dev in devices:
             fw_versions = extract_fw_versions(dev, tar)
     elif args.command == "flash":
+        print(f"{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} FLASH")
         if int_version[0] > 1:
             raise TTError(
                 f"Unsupported version ({version}) this flash program only supports flashing pre 2.0 packages"
