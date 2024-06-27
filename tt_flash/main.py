@@ -107,6 +107,12 @@ def parse_args():
     flash.add_argument(
         "--force", default=False, action="store_true", help="Force update the ROM"
     )
+    flash.add_argument(
+        "--no-reset",
+        help="Do not reset devices at the end of flash",
+        default=False,
+        action="store_true",
+    )
 
     # version = subparsers.add_parser("version")
     # version.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
@@ -252,6 +258,7 @@ def main():
             mobos,
             tar,
             args.force,
+            args.no_reset,
             skip_missing_fw=args.skip_missing_fw,
         )
     else:
