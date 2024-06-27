@@ -18,11 +18,10 @@ import sys
 import tt_flash
 from tt_flash.chip import TTChip, GsChip, detect_chips
 from tt_flash.error import TTError
-from tt_flash.utility import change_to_public_name, get_board_type
+from tt_flash.utility import change_to_public_name, get_board_type, CConfig
 
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
-from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
 
 
 def rmw_param(
@@ -133,7 +132,7 @@ def live_countdown(wait_time: float, name: str, print_initial: bool = True):
         print(f"{name} started, will wait {wait_time} seconds for it to complete")
 
     # If True then we are running in an interactive environment
-    if sys.stdout.isatty():
+    if CConfig.is_tty():
         start = time.time()
         elapsed = time.time() - start
         while elapsed < wait_time:
@@ -447,11 +446,11 @@ def flash_chip_stage1(
             )
             if can_reset:
                 print(
-                    f"\t\t\t\t{CMD_LINE_COLOR.GREEN}Success:{CMD_LINE_COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
+                    f"\t\t\t\t{CConfig.COLOR.GREEN}Success:{CConfig.COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
                 )
         except Exception as e:
             print(
-                f"\t\t\t\t{CMD_LINE_COLOR.YELLOW}Fail:{CMD_LINE_COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
+                f"\t\t\t\t{CConfig.COLOR.YELLOW}Fail:{CConfig.COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
             )
             can_reset = False
     else:
@@ -504,7 +503,7 @@ def flash_chip_stage2(
 
         return 0
 
-    if sys.stdout.isatty():
+    if CConfig.is_tty():
         print(
             "\t\t\tWriting new firmware... (this may take up to 1 minute)",
             end="",
@@ -515,10 +514,10 @@ def flash_chip_stage2(
 
     perform_write(chip, data.write)
 
-    if sys.stdout.isatty():
+    if CConfig.is_tty():
         print("\r\033[K", end="")
     print(
-        f"\t\t\tWriting new firmware... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}"
+        f"\t\t\tWriting new firmware... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
     )
 
     print(
@@ -526,14 +525,14 @@ def flash_chip_stage2(
         end="",
         flush=True,
     )
-    if not sys.stdout.isatty():
+    if not CConfig.is_tty():
         print()
 
     if perform_verify(chip, data.write) != 0:
-        if sys.stdout.isatty():
+        if CConfig.is_tty():
             print(f"\r\033[K", end="")
         print(
-            f"\t\t\tIntial verification: {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}"
+            f"\t\t\tIntial verification: {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}"
         )
 
         print(
@@ -541,7 +540,7 @@ def flash_chip_stage2(
             end="",
             flush=True,
         )
-        if not sys.stdout.isatty():
+        if not CConfig.is_tty():
             print()
 
         perform_write(chip, data.write)
@@ -551,22 +550,22 @@ def flash_chip_stage2(
             end="",
             flush=True,
         )
-        if not sys.stdout.isatty():
+        if not CConfig.is_tty():
             print()
 
         if perform_verify(chip, data.write) != 0:
-            if sys.stdout.isatty():
+            if CConfig.is_tty():
                 print(f"\r\033[K", end="")
             # TODO(drosen): Should I really be this confident about an RMA?
             print(
-                f"\t\t\tSecond verification {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}, please try one more time after a reset, if you still see failures (or the board falls of the pcie bus) you will need to RMA this board."
+                f"\t\t\tSecond verification {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}, please try one more time after a reset, if you still see failures (or the board falls of the pcie bus) you will need to RMA this board."
             )
             return None
 
-    if sys.stdout.isatty():
+    if CConfig.is_tty():
         print(f"\r\033[K", end="")
     print(
-        f"\t\t\tFirmware verification... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}"
+        f"\t\t\tFirmware verification... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
     )
 
     trigged_copy = False
@@ -585,7 +584,7 @@ def flash_chip_stage2(
                 triggered_reset_disable = True
             except Exception as e:
                 print(
-                    f"\t\t\t{CMD_LINE_COLOR.BLUE}NOTE:{CMD_LINE_COLOR.ENDC} Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
+                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
                 )
                 return None
             if triggered_reset_disable:
@@ -596,7 +595,7 @@ def flash_chip_stage2(
             trigged_copy = True
         except Exception as e:
             print(
-                f"\t\t\t{CMD_LINE_COLOR.BLUE}NOTE:{CMD_LINE_COLOR.ENDC} Failed to initiate left to right copy; please reset the host to reset the board and then rerun the flash with the --force flag to complete flash."
+                f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to initiate left to right copy; please reset the host to reset the board and then rerun the flash with the --force flag to complete flash."
             )
             return None
 
@@ -612,7 +611,7 @@ class Manifest:
 def verify_package(fw_package: tarfile.TarFile):
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
-        if sys.stdout.isatty():
+        if CConfig.is_tty():
             # HACK(drosen): Would not have ended the last line with a '\n'
             print("\n")
         raise TTError(
@@ -638,32 +637,31 @@ def verify_package(fw_package: tarfile.TarFile):
 def flash_chips(
     sys_config: Optional[dict],
     devices: list[TTChip],
-    mobos: list[str],
     fw_package: tarfile.TarFile,
     force: bool,
     no_reset: bool,
     skip_missing_fw: bool = False,
 ):
-    print(f"\t{CMD_LINE_COLOR.GREEN}Sub Stage:{CMD_LINE_COLOR.ENDC} VERIFY")
-    if sys.stdout.isatty():
+    print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
+    if CConfig.is_tty():
         print("\t\tVerifying fw-package can be flashed", end="", flush=True)
     else:
         print("\t\tVerifying fw-package can be flashed")
     manifest = verify_package(fw_package)
 
-    if sys.stdout.isatty():
+    if CConfig.is_tty():
         print(
-            f"\r\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}"
+            f"\r\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
         )
     else:
         print(
-            f"\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}"
+            f"\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
         )
 
     to_flash = []
     for dev in devices:
         print(
-            f"\t\tVerifying {CMD_LINE_COLOR.BLUE}{dev}{CMD_LINE_COLOR.ENDC} can be flashed"
+            f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed"
         )
         try:
             boardname = get_board_type(dev.board_type(), from_type=True)
@@ -675,14 +673,14 @@ def flash_chips(
 
         to_flash.append(boardname)
 
-    print(f"\t{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} FLASH")
+    print(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
     flash_data = []
     flash_error = []
     needs_reset = []
     for chip, boardname in zip(devices, to_flash):
         print(
-            f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 1: {CMD_LINE_COLOR.BLUE}{chip}{CMD_LINE_COLOR.ENDC}"
+            f"\t\t{CConfig.COLOR.GREEN}Sub Stage{CConfig.COLOR.ENDC} FLASH Step 1: {CConfig.COLOR.BLUE}{chip}{CConfig.COLOR.ENDC}"
         )
         result = flash_chip_stage1(
             chip,
@@ -705,7 +703,7 @@ def flash_chips(
     triggered_copy = False
     for chip, data in flash_data:
         print(
-            f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 2: {CMD_LINE_COLOR.BLUE}{chip} {{{data.name}}}{CMD_LINE_COLOR.ENDC}"
+            f"\t\t{CConfig.COLOR.GREEN}Sub Stage{CConfig.COLOR.ENDC} FLASH Step 2: {CConfig.COLOR.BLUE}{chip} {{{data.name}}}{CConfig.COLOR.ENDC}"
         )
         result = flash_chip_stage2(chip, data)
         if result is None:
@@ -721,7 +719,7 @@ def flash_chips(
         live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
     if len(needs_reset) > 0:
-        print(f"{CMD_LINE_COLOR.GREEN}Stage:{CMD_LINE_COLOR.ENDC} RESET")
+        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
 
         if no_reset:
             if rc != 0:
@@ -779,8 +777,8 @@ def flash_chips(
                     detect_chips()
 
     if rc == 0:
-        print(f"{CMD_LINE_COLOR.GREEN}FLASH SUCCESS{CMD_LINE_COLOR.ENDC}")
+        print(f"{CConfig.COLOR.GREEN}FLASH SUCCESS{CConfig.COLOR.ENDC}")
     elif rc == 0:
-        print(f"{CMD_LINE_COLOR.RED}FLASH FAILED{CMD_LINE_COLOR.ENDC}")
+        print(f"{CConfig.COLOR.RED}FLASH FAILED{CConfig.COLOR.ENDC}")
 
     return rc

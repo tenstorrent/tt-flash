@@ -10,6 +10,8 @@ except (ModuleNotFoundError, ImportError):
 import sys
 from typing import Optional
 
+from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
+
 
 # Returns the root path of the package, so we can access data files and such
 def package_root_path():
@@ -127,3 +129,28 @@ def hex_to_date(hexdate: int):
     minute = hexdate & 0xFF
 
     return f"{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}"
+
+
+class ConfigurableCmdColor:
+    def __init__(self, use_color: bool) -> None:
+        self.use_color = use_color
+
+    def __getattr__(self, k):
+        if k == "use_color":
+            return self.use_color
+        elif self.use_color:
+            return getattr(CMD_LINE_COLOR, k)
+        else:
+            return ""
+
+
+class CmdLineConfig:
+    def __init__(self, use_color: bool, force_no_tty: bool) -> None:
+        self.COLOR = ConfigurableCmdColor(use_color)
+        self.force_no_tty = force_no_tty
+
+    def is_tty(self) -> bool:
+        return (not self.force_no_tty) and sys.stdout.isatty()
+
+
+CConfig = CmdLineConfig(True, False)

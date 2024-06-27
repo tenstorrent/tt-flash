@@ -70,15 +70,20 @@ pip install --editable .
 
 ### Help text
 ```
-usage: tt-flash [-h] [-v] [--sys-config SYS_CONFIG] {flash} ...
+usage: tt-flash [-h] [-v] [--sys-config SYS_CONFIG] [--no-color] [--no-tty] {flash} ...
 
 optional arguments:
   -h, --help            show this help message and exit
   -v, --version         show program's version number and exit
   --sys-config SYS_CONFIG
                         Path to the pre generated sys-config json
+  --no-color            Disable the colorful output
+  --no-tty              Force disable the tty command output
 
-usage: tt-flash flash [-h] [--sys-config SYS_CONFIG] --fw-tar FW_TAR [--skip-missing-fw] [--force]
+command:
+  {flash}
+
+usage: tt-flash flash [-h] [--sys-config SYS_CONFIG] --fw-tar FW_TAR [--skip-missing-fw] [--force] [--no-reset]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -87,6 +92,7 @@ optional arguments:
   --fw-tar FW_TAR       Path to the firmware tarball
   --skip-missing-fw     If the fw packages doesn't contain the fw for a detected board, continue flashing
   --force               Force update the ROM
+  --no-reset            Do not reset devices at the end of flash
 ```
 
 ## Typical usage
