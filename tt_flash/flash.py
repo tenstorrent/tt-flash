@@ -489,10 +489,7 @@ def flash_chip_stage2(
             base_data = chip.spi_read(0, len(write))
 
             if base_data != write:
-                # NOTE(drosen): Figure out what to do in this case (recommend RMA?)
-                print(
-                    f"Verifcation Failed; you probably don't want to reset or reboot until this check passes"
-                )
+                print("SPI mismatch!")
                 print("addr, actual, expected")
                 for index, (a, b) in enumerate(zip(base_data, write)):
                     if a != b:
@@ -556,9 +553,8 @@ def flash_chip_stage2(
         if perform_verify(chip, data.write) != 0:
             if CConfig.is_tty():
                 print(f"\r\033[K", end="")
-            # TODO(drosen): Should I really be this confident about an RMA?
             print(
-                f"\t\t\tSecond verification {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}, please try one more time after a reset, if you still see failures (or the board falls of the pcie bus) you will need to RMA this board."
+                f"\t\t\tSecond verification {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}, please do not reset or poweroff the board and contact support for further assistance."
             )
             return None
 
