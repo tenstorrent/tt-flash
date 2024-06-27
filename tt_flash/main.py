@@ -68,12 +68,34 @@ def parse_args():
         action="version",
         version=VERSION_STR,
     )
-    parser.add_argument("--sys-config", help="Path to the pre generated sys-config json", default=None, type=Path)
+    parser.add_argument(
+        "--sys-config",
+        help="Path to the pre generated sys-config json",
+        default=None,
+        type=Path,
+    )
+    parser.add_argument(
+        "--no-color",
+        help="Disable the colorful output",
+        default=False,
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no-tty",
+        help="Force disable the tty command output",
+        default=False,
+        action="store_true",
+    )
 
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
     flash = subparsers.add_parser("flash")
-    flash.add_argument("--sys-config", help="Path to the pre generated sys-config json", default=None, type=Path)
+    flash.add_argument(
+        "--sys-config",
+        help="Path to the pre generated sys-config json",
+        default=None,
+        type=Path,
+    )
     flash.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
     flash.add_argument(
         "--skip-missing-fw",
@@ -140,35 +162,31 @@ def load_sys_config(path: Optional[Path]) -> Optional[dict]:
             print(f"\tLoaded config from {global_path}")
             return json.load(global_path.open())
         else:
-            print(f"\tChecking {global_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}")
+            print(
+                f"\tChecking {global_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}"
+            )
 
         local_path = Path("~/.config/tenstorrent/config.json")
         if local_path.exists():
             print(f"\tLoaded config from {local_path}")
             return json.load(local_path.open())
         else:
-            print(f"\tChecking {local_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}")
+            print(
+                f"\tChecking {local_path}: {CMD_LINE_COLOR.YELLOW}not found{CMD_LINE_COLOR.ENDC}"
+            )
 
-        print("\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one")
-        print(f"\t{CMD_LINE_COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CMD_LINE_COLOR.ENDC}")
+        print(
+            "\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one"
+        )
+        print(
+            f"\t{CMD_LINE_COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CMD_LINE_COLOR.ENDC}"
+        )
 
         return None
     else:
         print(f"Loaded config from {path}")
         return json.load(open(path))
 
-def get_devices_from_config(config: dict) -> list[Chip]:
-    pci_indexes = []
-    pci_indexes.extend(config.get("gs_tensix_reset", {}).get("pci_index", []))
-    pci_indexes.extend(config.get("wh_tensix_reset", {}).get("pci_index", []))
-
-    mobo_data = []
-    for mobo in config.get("wh_mobo_reset", {}):
-        if "MOBO NAME" in mobo.get("mobo", {}):
-            mobo_data.append(mobo)
-
-def config_reset(config: dict):
-    pass
 
 def main():
     parser, args = parse_args()
@@ -228,7 +246,14 @@ def main():
                     if "MOBO NAME" not in mobo_dict["mobo"]:
                         mobos.append(mobo_dict["mobo"])
 
-        return flash_chips(config, devices, mobos, tar, args.force, skip_missing_fw=args.skip_missing_fw)
+        return flash_chips(
+            config,
+            devices,
+            mobos,
+            tar,
+            args.force,
+            skip_missing_fw=args.skip_missing_fw,
+        )
     else:
         raise TTError(f"No handler for command {args.command}.")
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+
 try:
     from importlib.resources import files, as_file
 except (ModuleNotFoundError, ImportError):

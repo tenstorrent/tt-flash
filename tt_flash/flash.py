@@ -24,6 +24,7 @@ from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
 from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
 
+
 def rmw_param(
     chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
 ) -> bytearray:
@@ -516,9 +517,7 @@ def flash_chip(
                     "Board can be reset; the reset will be triggered if the reset of the flashed chips healthy"
                 )
         except Exception as e:
-            print(
-                "Board cannot be reset: Failed to get the current firmware versions"
-            )
+            print("Board cannot be reset: Failed to get the current firmware versions")
             error = True
 
         if can_reset:
@@ -579,16 +578,19 @@ def flash_chip(
             print("Flash complete, reset the board to load the new firmware.")
         return 0
 
+
 @dataclass
 class FlashData:
     write: bytes
     name: str
     idname: str
 
+
 class FlashStageResultState(Enum):
     Ok = auto()
     NoFlash = auto()
     Err = auto()
+
 
 @dataclass
 class FlashStageResult:
@@ -596,6 +598,7 @@ class FlashStageResult:
     can_reset: bool
     msg: str
     data: Optional[FlashData]
+
 
 def flash_chip_stage1(
     chip: TTChip,
@@ -710,7 +713,10 @@ def flash_chip_stage1(
     if force:
         print("\t\t\tForced ROM update requested. ROM will now be updated.")
     elif bundle_version is None:
-        if spi_bundle_version is not None and spi_bundle_version >= manifest.bundle_version:
+        if (
+            spi_bundle_version is not None
+            and spi_bundle_version >= manifest.bundle_version
+        ):
             if spi_bundle_version == manifest.bundle_version:
                 print(
                     "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
@@ -719,7 +725,9 @@ def flash_chip_stage1(
                 print(
                     "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
-            return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
+            return FlashStageResult(
+                state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+            )
         else:
             print(
                 "\t\t\tWas not able to fetch current firmware information, assuming that it needs an update"
@@ -731,13 +739,17 @@ def flash_chip_stage1(
         print(
             "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
         )
-        return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
+        return FlashStageResult(
+            state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+        )
     elif bundle_version >= manifest.bundle_version and running_bundle_version not in [
         0xFFFFFFFF,
         0xDEAD,
     ]:
         print("\t\t\tROM does not need to be updated.")
-        return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
+        return FlashStageResult(
+            state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+        )
     else:
         print("\t\t\ttt-flash version > ROM version. ROM will now be updated.")
 
@@ -755,8 +767,12 @@ def flash_chip_stage1(
     boardname_to_display = change_to_public_name(boardname)
     if image is None and mask is None:
         if skip_missing_fw:
-            print(f"\t\t\tCould not find flash data for {boardname_to_display} in tarfile")
-            return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
+            print(
+                f"\t\t\tCould not find flash data for {boardname_to_display} in tarfile"
+            )
+            return FlashStageResult(
+                state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+            )
         else:
             raise TTError(
                 f"Could not find flash data for {boardname_to_display} in tarfile"
@@ -846,7 +862,9 @@ def flash_chip_stage1(
         last_addr = addr + len(data)
 
     if boardname in ["NEBULA_X1", "NEBULA_X2"]:
-        print("\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible")
+        print(
+            "\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible"
+        )
         can_reset = False
 
         try:
@@ -868,15 +886,12 @@ def flash_chip_stage1(
         can_reset = False
 
     return FlashStageResult(
-        state = FlashStageResultState.Ok,
-        can_reset = can_reset,
-        msg = "",
-        data = FlashData(
-            write = write,
-            name = boardname_to_display,
-            idname = boardname
-        )
+        state=FlashStageResultState.Ok,
+        can_reset=can_reset,
+        msg="",
+        data=FlashData(write=write, name=boardname_to_display, idname=boardname),
     )
+
 
 def flash_chip_stage2(
     chip: TTChip,
@@ -918,7 +933,11 @@ def flash_chip_stage2(
         return 0
 
     if sys.stdout.isatty():
-        print("\t\t\tWriting new firmware... (this may take up to 1 minute)", end="", flush=True)
+        print(
+            "\t\t\tWriting new firmware... (this may take up to 1 minute)",
+            end="",
+            flush=True,
+        )
     else:
         print("\t\t\tWriting new firmware... (this may take up to 1 minute)")
 
@@ -926,24 +945,40 @@ def flash_chip_stage2(
 
     if sys.stdout.isatty():
         print("\r\033[K", end="")
-    print(f"\t\t\tWriting new firmware... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}")
+    print(
+        f"\t\t\tWriting new firmware... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}"
+    )
 
-    print("\t\t\tVerifying flashed firmware... (this may also take up to 1 minute)", end="", flush=True)
+    print(
+        "\t\t\tVerifying flashed firmware... (this may also take up to 1 minute)",
+        end="",
+        flush=True,
+    )
     if not sys.stdout.isatty():
         print()
 
     if perform_verify(chip, data.write) != 0:
         if sys.stdout.isatty():
             print(f"\r\033[K", end="")
-        print(f"\t\t\tIntial verification: {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}")
+        print(
+            f"\t\t\tIntial verification: {CMD_LINE_COLOR.RED}failed{CMD_LINE_COLOR.ENDC}"
+        )
 
-        print("\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)", end="", flush=True)
+        print(
+            "\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)",
+            end="",
+            flush=True,
+        )
         if not sys.stdout.isatty():
             print()
 
         perform_write(chip, data.write)
 
-        print("\t\t\tVerifying second flash attempt... (this may also take up to 1 minute)", end="", flush=True)
+        print(
+            "\t\t\tVerifying second flash attempt... (this may also take up to 1 minute)",
+            end="",
+            flush=True,
+        )
         if not sys.stdout.isatty():
             print()
 
@@ -956,10 +991,11 @@ def flash_chip_stage2(
             )
             return None
 
-
     if sys.stdout.isatty():
         print(f"\r\033[K", end="")
-    print(f"\t\t\tFirmware verification... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}")
+    print(
+        f"\t\t\tFirmware verification... {CMD_LINE_COLOR.GREEN}SUCCESS{CMD_LINE_COLOR.ENDC}"
+    )
 
     trigged_copy = False
     if data.idname == "NEBULA_X2":
@@ -994,10 +1030,12 @@ def flash_chip_stage2(
 
     return trigged_copy
 
+
 @dataclass
 class Manifest:
     data: dict
     bundle_version: tuple[int, int, int, int]
+
 
 def verify_package(fw_package: tarfile.TarFile):
     manifest_data = fw_package.extractfile("./manifest.json")
@@ -1022,10 +1060,8 @@ def verify_package(fw_package: tarfile.TarFile):
     global __SEMANTIC_BUNDLE_VERSION
     __SEMANTIC_BUNDLE_VERSION = list(new_bundle_version)
 
-    return Manifest(
-        data = manifest,
-        bundle_version = new_bundle_version
-    )
+    return Manifest(data=manifest, bundle_version=new_bundle_version)
+
 
 def flash_chips(
     sys_config: Optional[dict],
@@ -1043,13 +1079,19 @@ def flash_chips(
     manifest = verify_package(fw_package)
 
     if sys.stdout.isatty():
-        print(f"\r\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}")
+        print(
+            f"\r\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}"
+        )
     else:
-        print(f"\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}")
+        print(
+            f"\t\tVerifying fw-package can be flashed: {CMD_LINE_COLOR.GREEN}complete{CMD_LINE_COLOR.ENDC}"
+        )
 
     to_flash = []
     for dev in devices:
-        print(f"\t\tVerifying {CMD_LINE_COLOR.BLUE}{dev}{CMD_LINE_COLOR.ENDC} can be flashed")
+        print(
+            f"\t\tVerifying {CMD_LINE_COLOR.BLUE}{dev}{CMD_LINE_COLOR.ENDC} can be flashed"
+        )
         try:
             boardname = get_board_type(dev.board_type(), from_type=True)
         except:
@@ -1065,10 +1107,17 @@ def flash_chips(
     flash_data = []
     flash_error = []
     needs_reset = []
-    for (chip, boardname) in zip(devices, to_flash):
-        print(f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 1: {CMD_LINE_COLOR.BLUE}{chip}{CMD_LINE_COLOR.ENDC}")
+    for chip, boardname in zip(devices, to_flash):
+        print(
+            f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 1: {CMD_LINE_COLOR.BLUE}{chip}{CMD_LINE_COLOR.ENDC}"
+        )
         result = flash_chip_stage1(
-            chip, boardname, manifest, fw_package, force, skip_missing_fw=skip_missing_fw
+            chip,
+            boardname,
+            manifest,
+            fw_package,
+            force,
+            skip_missing_fw=skip_missing_fw,
         )
 
         if result.state == FlashStageResultState.Err:
@@ -1081,8 +1130,10 @@ def flash_chips(
     rc = 0
 
     triggered_copy = False
-    for (chip, data) in flash_data:
-        print(f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 2: {CMD_LINE_COLOR.BLUE}{chip} {{{data.name}}}{CMD_LINE_COLOR.ENDC}")
+    for chip, data in flash_data:
+        print(
+            f"\t\t{CMD_LINE_COLOR.GREEN}Sub Stage{CMD_LINE_COLOR.ENDC} FLASH Step 2: {CMD_LINE_COLOR.BLUE}{chip} {{{data.name}}}{CMD_LINE_COLOR.ENDC}"
+        )
         result = flash_chip_stage2(chip, data)
         if result is None:
             rc += 1
@@ -1091,7 +1142,9 @@ def flash_chips(
 
     # If we flashed an X2 then we will wait for the copy to complete
     if triggered_copy:
-        print(f"\t\tFlash and verification for all chips completed, will now wait for for n300 remote copy to complete...")
+        print(
+            f"\t\tFlash and verification for all chips completed, will now wait for for n300 remote copy to complete..."
+        )
         live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
     if len(needs_reset) > 0:
@@ -1106,7 +1159,10 @@ def flash_chips(
                 for mobo_dict in sys_config.get("wh_mobo_reset", {}):
                     # Only add the mobos that have a name
                     if "mobo" in mobo_dict:
-                        if "MOBO NAME" not in mobo_dict["mobo"] and mobo_dict["mobo"] in mobos:
+                        if (
+                            "MOBO NAME" not in mobo_dict["mobo"]
+                            and mobo_dict["mobo"] in mobos
+                        ):
                             mobo_dict_list.append(mobo_dict)
 
                 if len(mobo_dict_list) > 0:
@@ -1115,13 +1171,20 @@ def flash_chips(
                     # So we'll just remove them here to avoid setting them again
                     wh_link_pci_indices = sys_config["wh_link_reset"]["pci_index"]
                     for entry in mobo_dict_list:
-                        if "nb_host_pci_idx" in entry.keys() and entry["nb_host_pci_idx"]:
+                        if (
+                            "nb_host_pci_idx" in entry.keys()
+                            and entry["nb_host_pci_idx"]
+                        ):
                             # remove the list of WH pcie index's from the reset list
                             wh_link_pci_indices = list(
                                 set(wh_link_pci_indices) - set(entry["nb_host_pci_idx"])
                             )
                         sys_config["wh_link_reset"]["pci_index"] = wh_link_pci_indices
-                    needs_reset = [idx for idx in sys_config["wh_link_reset"]["pci_index"] if idx in needs_reset]
+                    needs_reset = [
+                        idx
+                        for idx in sys_config["wh_link_reset"]["pci_index"]
+                        if idx in needs_reset
+                    ]
 
             if len(needs_reset) > 0:
                 WHChipReset().full_lds_reset(pci_interfaces=needs_reset, reset_m3=True)
@@ -1133,4 +1196,3 @@ def flash_chips(
         print(f"{CMD_LINE_COLOR.RED}FLASH FAILED{CMD_LINE_COLOR.ENDC}")
 
     return rc
-
