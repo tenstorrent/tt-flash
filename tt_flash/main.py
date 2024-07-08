@@ -3,18 +3,22 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import argparse
 import datetime
 import os
 import json
 import sys
 import tarfile
+from pathlib import Path
 
 import tt_flash
 from tt_flash import utility
 from tt_flash.error import TTError
+from tt_flash.utility import CConfig
 from tt_flash.version import extract_fw_versions
-from tt_flash.flash import flash_chip
+from tt_flash.flash import flash_chips
 
 from .chip import detect_local_chips
 
@@ -63,10 +67,34 @@ def parse_args():
         action="version",
         version=VERSION_STR,
     )
+    parser.add_argument(
+        "--sys-config",
+        help="Path to the pre generated sys-config json",
+        default=None,
+        type=Path,
+    )
+    parser.add_argument(
+        "--no-color",
+        help="Disable the colorful output",
+        default=False,
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no-tty",
+        help="Force disable the tty command output",
+        default=False,
+        action="store_true",
+    )
 
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
     flash = subparsers.add_parser("flash")
+    flash.add_argument(
+        "--sys-config",
+        help="Path to the pre generated sys-config json",
+        default=None,
+        type=Path,
+    )
     flash.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
     flash.add_argument(
         "--skip-missing-fw",
@@ -77,6 +105,12 @@ def parse_args():
     )
     flash.add_argument(
         "--force", default=False, action="store_true", help="Force update the ROM"
+    )
+    flash.add_argument(
+        "--no-reset",
+        help="Do not reset devices at the end of flash",
+        default=False,
+        action="store_true",
     )
 
     # version = subparsers.add_parser("version")
@@ -124,8 +158,46 @@ def parse_args():
     return parser, parser.parse_args(args=cmd_args)
 
 
+def load_sys_config(path: Optional[Path]) -> Optional[dict]:
+    if path is None:
+        # Do a search for a default config
+        print("\tSearching for default sys-config path")
+        global_path = Path("/etc/tenstorrent/config.json")
+        if global_path.exists():
+            print(f"\tLoaded config from {global_path}")
+            return json.load(global_path.open())
+        else:
+            print(
+                f"\tChecking {global_path}: {CConfig.COLOR.YELLOW}not found{CConfig.COLOR.ENDC}"
+            )
+
+        local_path = Path("~/.config/tenstorrent/config.json")
+        if local_path.exists():
+            print(f"\tLoaded config from {local_path}")
+            return json.load(local_path.open())
+        else:
+            print(
+                f"\tChecking {local_path}: {CConfig.COLOR.YELLOW}not found{CConfig.COLOR.ENDC}"
+            )
+
+        print(
+            "\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one"
+        )
+        print(
+            f"\t{CConfig.COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CConfig.COLOR.ENDC}"
+        )
+
+        return None
+    else:
+        print(f"Loaded config from {path}")
+        return json.load(open(path))
+
+
 def main():
     parser, args = parse_args()
+
+    CConfig.force_no_tty = args.no_tty
+    CConfig.COLOR.use_color = not args.no_color
 
     try:
         tar = tarfile.open(args.fw_tar, "r")
@@ -153,6 +225,10 @@ def main():
     if int_version is None:
         raise TTError(f"Invalid version ({version}) in {args.fw_tar}/manifest.json")
 
+    print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
+    config = load_sys_config(args.sys_config)
+
+    print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
     devices = detect_local_chips(ignore_ethernet=True)
 
     if args.command == "version":
@@ -164,39 +240,20 @@ def main():
         for dev in devices:
             fw_versions = extract_fw_versions(dev, tar)
     elif args.command == "flash":
+        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
         if int_version[0] > 1:
             raise TTError(
                 f"Unsupported version ({version}) this flash program only supports flashing pre 2.0 packages"
             )
 
-        rc = 0
-        for dev in devices:
-            # Get the board type, first we will try to get the board_type via pci.
-            # This will fail in two cases
-            # 1) the board is completely broken and we will need to
-            # reflash the board id (hopefully we still have enough access to fix the issue)
-            # 2) we are using something like jtag in which case we'll probably want to probe the board
-            #
-            # For now I think we can ignore both of these problems but the fix for 1) would be to allow the user
-            # to specify a board_id to overwrite the primary one with. Which could be problematic... the fix
-            # for 2) would be to read the board id back from the spi. The fix for 2) will come when I add
-            # version readback support
-
-            try:
-                boardname = utility.get_board_type(dev.board_type(), from_type=True)
-            except:
-                boardname = None
-
-            if boardname is None:
-                raise TTError(f"Did not recognize board type for {dev}")
-
-            print(f"\nNow checking device {dev}:\n")
-
-            rc += flash_chip(
-                dev, boardname, tar, args.force, skip_missing_fw=args.skip_missing_fw
-            )
-
-        return rc
+        return flash_chips(
+            config,
+            devices,
+            tar,
+            args.force,
+            args.no_reset,
+            skip_missing_fw=args.skip_missing_fw,
+        )
     else:
         raise TTError(f"No handler for command {args.command}.")
 

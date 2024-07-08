@@ -5,6 +5,7 @@
 # This will get the semantic version from the current pyproject package definition.
 
 from typing import Any
+
 try:
     import importlib.metadata as importlib_metadata
 except ModuleNotFoundError:
