@@ -95,7 +95,15 @@ def parse_args():
         default=None,
         type=Path,
     )
-    flash.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
+    flash.add_argument(
+        "--list_fw_ver",
+        help="List the current version of firmware and exit",
+        default=False,
+        action="store_true",
+    )
+    # Conditionally add --fw-tar only required if --list_fw_ver is not present since that option will
+    # only list the current running firmware and exit
+    flash.add_argument("--fw-tar", help="Path to the firmware tarball", required='--list_fw_ver' not in sys.argv)
     flash.add_argument(
         "--skip-missing-fw",
         help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
@@ -199,6 +207,18 @@ def main():
     CConfig.force_no_tty = args.no_tty
     CConfig.COLOR.use_color = not args.no_color
 
+    # Print the current version of firmware on the card and exit
+    if args.list_fw_ver and args.command == "flash":
+        return flash_chips(
+            load_sys_config(args.sys_config),
+            detect_local_chips(ignore_ethernet=True),
+            None,
+            False,
+            False,
+            args.list_fw_ver,
+            False,
+        )
+
     try:
         tar = tarfile.open(args.fw_tar, "r")
     except Exception as e:
@@ -220,7 +240,7 @@ def main():
         if len(int_version) != 3:
             int_version = None
     except ValueError:
-        int_version = None
+            int_version = None
 
     if int_version is None:
         raise TTError(f"Invalid version ({version}) in {args.fw_tar}/manifest.json")
@@ -252,6 +272,7 @@ def main():
             tar,
             args.force,
             args.no_reset,
+            args.list_fw_ver,
             skip_missing_fw=args.skip_missing_fw,
         )
     else:
