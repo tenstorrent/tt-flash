@@ -170,6 +170,30 @@ class FlashStageResult:
     msg: str
     data: Optional[FlashData]
 
+def get_bcd_version_string(dec_ver_num):
+    major_hex=str(f'{dec_ver_num:x}'.zfill(8))[0:2]
+    minor_hex=str(f'{dec_ver_num:x}'.zfill(8))[2:4]
+    patch_hex=str(f'{dec_ver_num:x}'.zfill(8))[4:6]
+    build_hex=str(f'{dec_ver_num:x}'.zfill(8))[6:8]
+
+    major_int=int(major_hex, 16)
+    minor_int=int(minor_hex, 16)
+    patch_int=int(patch_hex, 16)
+    build_int=int(build_hex, 16)
+
+    major_str=str(major_int)
+    minor_str=str(minor_int)
+    patch_str=str(patch_int)
+    build_str=str(build_int)
+
+    bcd_ver_str="v" + major_str + "." + minor_str + "." + patch_str + "." + build_str
+    return(bcd_ver_str)
+
+def get_dec_ver_string(dec_ver_num):
+    return(str(dec_ver_num).zfill(8))
+
+def get_hex_ver_string(dec_ver_num):
+    return(f"{dec_ver_num:#0{10}x}")
 
 def flash_chip_stage1(
     chip: TTChip,
@@ -177,6 +201,7 @@ def flash_chip_stage1(
     manifest: Manifest,
     fw_package: tarfile.TarFile,
     force: bool,
+    list_fw_ver: bool = False,
     skip_missing_fw: bool = False,
 ) -> FlashStageResult:
     """
@@ -234,6 +259,20 @@ def flash_chip_stage1(
                     arg0=2,
                     arg1=0,
                 )[0]
+
+        if list_fw_ver:
+            print("")
+            print("\tfw_ver hex:", get_hex_ver_string(fw_version))
+            print("\tfw_ver dec:", get_dec_ver_string(fw_version))
+            print("\tfw_ver bcd:", get_bcd_version_string(fw_version))
+            print("")
+            print("\tbunver hex:", get_hex_ver_string(running_bundle_version))
+            print("\tbunver dec:", get_dec_ver_string(running_bundle_version))
+            print("\tbunver bcd:", get_bcd_version_string(running_bundle_version))
+            print("")
+            return FlashStageResult(
+                state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+            )
 
     except Exception as e:
         # Very old fw doesn't have support for getting the fw version at all
@@ -636,29 +675,39 @@ def flash_chips(
     fw_package: tarfile.TarFile,
     force: bool,
     no_reset: bool,
+    list_fw_ver: bool,
     skip_missing_fw: bool = False,
 ):
-    print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
-    if CConfig.is_tty():
-        print("\t\tVerifying fw-package can be flashed", end="", flush=True)
-    else:
-        print("\t\tVerifying fw-package can be flashed")
-    manifest = verify_package(fw_package)
+    if not list_fw_ver:
+        print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
+        if CConfig.is_tty():
+            print("\t\tVerifying fw-package can be flashed", end="", flush=True)
+        else:
+            print("\t\tVerifying fw-package can be flashed")
+        manifest = verify_package(fw_package)
 
-    if CConfig.is_tty():
-        print(
-            f"\r\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
-        )
+        if CConfig.is_tty():
+            print(
+                f"\r\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
+            )
+        else:
+            print(
+                f"\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
+            )
     else:
-        print(
-            f"\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
-        )
+        # We are only listing the version of firmware on the cards so we don't need a manifest for a new image
+        manifest = None
 
     to_flash = []
     for dev in devices:
-        print(
-            f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed"
-        )
+        if list_fw_ver:
+            print(
+                f"\nDevice {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} found"
+            )
+        else:
+            print(
+                f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed"
+            )
         try:
             boardname = get_board_type(dev.board_type(), from_type=True)
         except:
@@ -669,21 +718,24 @@ def flash_chips(
 
         to_flash.append(boardname)
 
-    print(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
+        if not list_fw_ver:
+            print(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
     flash_data = []
     flash_error = []
     needs_reset = []
     for chip, boardname in zip(devices, to_flash):
-        print(
-            f"\t\t{CConfig.COLOR.GREEN}Sub Stage{CConfig.COLOR.ENDC} FLASH Step 1: {CConfig.COLOR.BLUE}{chip}{CConfig.COLOR.ENDC}"
-        )
+        if not list_fw_ver:
+            print(
+                f"\t\t{CConfig.COLOR.GREEN}Sub Stage{CConfig.COLOR.ENDC} FLASH Step 1: {CConfig.COLOR.BLUE}{chip}{CConfig.COLOR.ENDC}"
+            )
         result = flash_chip_stage1(
             chip,
             boardname,
             manifest,
             fw_package,
             force,
+            list_fw_ver,
             skip_missing_fw=skip_missing_fw,
         )
 
@@ -773,7 +825,8 @@ def flash_chips(
                     detect_chips()
 
     if rc == 0:
-        print(f"{CConfig.COLOR.GREEN}FLASH SUCCESS{CConfig.COLOR.ENDC}")
+        if not list_fw_ver:
+            print(f"{CConfig.COLOR.GREEN}FLASH SUCCESS{CConfig.COLOR.ENDC}")
     elif rc == 0:
         print(f"{CConfig.COLOR.RED}FLASH FAILED{CConfig.COLOR.ENDC}")
 
