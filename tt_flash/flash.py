@@ -170,7 +170,7 @@ class FlashStageResult:
     msg: str
     data: Optional[FlashData]
 
-def get_bcd_version_string(dec_ver_num):
+def get_bcd_ver_str(dec_ver_num):
     major_hex=str(f'{dec_ver_num:x}'.zfill(8))[0:2]
     minor_hex=str(f'{dec_ver_num:x}'.zfill(8))[2:4]
     patch_hex=str(f'{dec_ver_num:x}'.zfill(8))[4:6]
@@ -189,10 +189,10 @@ def get_bcd_version_string(dec_ver_num):
     bcd_ver_str="v" + major_str + "." + minor_str + "." + patch_str + "." + build_str
     return(bcd_ver_str)
 
-def get_dec_ver_string(dec_ver_num):
+def get_dec_ver_str(dec_ver_num):
     return(str(dec_ver_num).zfill(8))
 
-def get_hex_ver_string(dec_ver_num):
+def get_hex_ver_str(dec_ver_num):
     return(f"{dec_ver_num:#0{10}x}")
 
 def flash_chip_stage1(
@@ -262,13 +262,13 @@ def flash_chip_stage1(
 
         if list_fw_ver:
             print("")
-            print("\tfw_ver hex:", get_hex_ver_string(fw_version))
-            print("\tfw_ver dec:", get_dec_ver_string(fw_version))
-            print("\tfw_ver bcd:", get_bcd_version_string(fw_version))
+            print("\tfw_ver hex:", get_hex_ver_str(fw_version))
+            print("\tfw_ver dec:", get_dec_ver_str(fw_version))
+            print("\tfw_ver bcd:", get_bcd_ver_str(fw_version))
             print("")
-            print("\tbunver hex:", get_hex_ver_string(running_bundle_version))
-            print("\tbunver dec:", get_dec_ver_string(running_bundle_version))
-            print("\tbunver bcd:", get_bcd_version_string(running_bundle_version))
+            print("\tbunver hex:", get_hex_ver_str(running_bundle_version))
+            print("\tbunver dec:", get_dec_ver_str(running_bundle_version))
+            print("\tbunver bcd:", get_bcd_ver_str(running_bundle_version))
             print("")
             return FlashStageResult(
                 state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
