@@ -89,6 +89,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --sys-config SYS_CONFIG
                         Path to the pre generated sys-config json
+  --list_fw_ver         List the current version of firmware and exit
   --fw-tar FW_TAR       Path to the firmware tarball
   --skip-missing-fw     If the fw packages doesn't contain the fw for a detected board, continue flashing
   --force               Force update the ROM
