@@ -199,130 +199,98 @@ def flash_chip_stage1(
         # Ok to keep going if there's a timeout
         pass
 
-    running_bundle_version = None
-    spi_bundle_version = None
-
-    old_fw = False
-    bundle_version = None
     exception = None
-    try:
-        fw_version = chip.arc_msg(
-            chip.fw_defines["MSG_TYPE_FW_VERSION"], wait_for_done=True, arg0=0, arg1=0
-        )[0]
+    fw_bundle_version = chip.get_bundle_version()
 
-        # Pre fw version 5 we don't have bundle support
-        # this version of tt-flash only works with bundled fw
-        # so it's safe to assume that we need to update
-        if fw_version < chip.min_fw_version():
-            old_fw = True
-        else:
-            running_bundle_version = chip.arc_msg(
-                chip.fw_defines["MSG_TYPE_FW_VERSION"],
-                wait_for_done=True,
-                arg0=1,
-                arg1=0,
-            )[0]
-
-            # There is a version of the firmware that doesn't correctly return an error when setting arg0 to an unknown option.
-            # The running_bundle_version and fw_version can never be the same (as mandated by the version formatting) so I can safely check to see if they are the same when checking for this older FW.
-            if running_bundle_version == 0xDEAD or fw_version == running_bundle_version:
-                old_fw = True
-            else:
-                spi_bundle_version = chip.arc_msg(
-                    chip.fw_defines["MSG_TYPE_FW_VERSION"],
-                    wait_for_done=True,
-                    arg0=2,
-                    arg1=0,
-                )[0]
-
-    except Exception as e:
-        # Very old fw doesn't have support for getting the fw version at all
-        # so it's safe to assume that we need to update
-        old_fw = True
-        exception = e
-
-    if old_fw:
-        if exception is None:
+    if fw_bundle_version.exception is not None:
+        if fw_bundle_version.allow_exception:
+            # Very old gs/wh fw doesn't have support for getting the fw version at all
+            # so it's safe to assume that we need to update
             if force:
                 print(
-                    "\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update"
+                    f"\t\t\tHit error {e} while trying to determine running firmware. Falling back to assuming that it needs an update"
                 )
             else:
                 raise TTError(
-                    "Looks like you are running a very old set of fw, it's safe to assume that it needs an update but please update it using --force"
+                    f"Hit error {e} while trying to determine running firmware. If you know what you are doing you may still update by re-rerunning using the --force flag."
                 )
         else:
-            if force:
-                print(
-                    f"\t\t\tHit error {exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
-                )
-            else:
-                raise TTError(
-                    f"Hit error {exception} while trying to determine running firmware. If you know what you are doing you may still update by re-rerunning using the --force flag."
-                )
+            # BH must always successfully be able to return a fw_version
+            raise TTError(
+                f"Hit error {e} while trying to determine running firmware."
+            )
 
+    bundle_version = None
+    if fw_bundle_version.running is None:
+        # Certain old fw versions won't have the running_bundle_version populated.
+        # In that case we can just assume that an upgrade is required.
+        if force:
+            print(
+                "\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update"
+            )
+        else:
+            raise TTError(
+                "Looks like you are running a very old set of fw, it's safe to assume that it needs an update but please update it using --force"
+            )
         print(f"\t\t\tNow flashing tt-flash version: {manifest.bundle_version}")
-    elif running_bundle_version is not None:
-        patch = running_bundle_version & 0xFF
-        minor = (running_bundle_version >> 8) & 0xFF
-        major = (running_bundle_version >> 16) & 0xFF
-        component = (running_bundle_version >> 24) & 0xFF
-        bundle_version = (component, major, minor, patch)
+    else:
+        component = fw_bundle_version.running[0]
         if component != manifest.bundle_version[0]:
             if force:
                 print(
-                    "\t\t\tFound unexpected bundle version, however you ran with force so we are barreling onwards"
+                    f"\t\t\tFound unexpected bundle version ('{component}'), however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
-                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {bundle_version}"
+                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running}"
                 )
 
         print(
-            f"\t\t\tROM version is: {bundle_version}. tt-flash version is: {manifest.bundle_version}"
+            f"\t\t\tROM version is: {fw_bundle_version.running}. tt-flash version is: {manifest.bundle_version}"
         )
+
+    detected_version = True
     if force:
+        detected_version = False
         print("\t\t\tForced ROM update requested. ROM will now be updated.")
-    elif bundle_version is None:
-        if (
-            spi_bundle_version is not None
-            and spi_bundle_version >= manifest.bundle_version
-        ):
-            if spi_bundle_version == manifest.bundle_version:
-                print(
-                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
-                )
+    # Best check is for if we have already flashed the desired fw (or newer fw) to spi
+    elif (
+        fw_bundle_version.spi is not None
+    ):
+        if fw_bundle_version.spi >= manifest.bundle_version:
+            # Now that we know if the SPI is newer we should check to see if the problem is that we have flashed the correct FW, but are running something too old
+            if fw_bundle_version.running is not None:
+                if fw_bundle_version.running >= manifest.bundle_version:
+                    print("\t\t\tROM does not need to be updated.")
+                if fw_bundle_version.running < manifest.bundle_version:
+                    print(
+                        "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    )
             else:
                 print(
-                    "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
+                    "\t\t\tROM does not need to be updated, cannot detect the running FW version but the SPI is ahead of the firmware you are attempting to flash. You can load the newer firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                 )
+
             return FlashStageResult(
                 state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
             )
-        else:
-            print(
-                "\t\t\tWas not able to fetch current firmware information, assuming that it needs an update"
-            )
+    # We did not see any spi versions returned... just go by running
     elif (
-        bundle_version >= manifest.bundle_version
-        and spi_bundle_version == manifest.bundle_version
+        fw_bundle_version.running is not None
     ):
-        print(
-            "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
-        )
-        return FlashStageResult(
-            state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
-        )
-    elif bundle_version >= manifest.bundle_version and running_bundle_version not in [
-        0xFFFFFFFF,
-        0xDEAD,
-    ]:
-        print("\t\t\tROM does not need to be updated.")
-        return FlashStageResult(
-            state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
-        )
+        if fw_bundle_version.running >= manifest.bundle_version:
+            print("\t\t\tROM does not need to be updated.")
+            return FlashStageResult(
+                state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+            )
     else:
-        print("\t\t\ttt-flash version > ROM version. ROM will now be updated.")
+        detected_version = False
+        print(
+            "\t\t\tWas not able to fetch current firmware information, assuming that it needs an update"
+        )
+
+    if detected_version:
+        print("\t\t\tFW bundle version > ROM version. ROM will now be updated.")
 
     try:
         image = fw_package.extractfile(f"./{boardname}/image.bin")

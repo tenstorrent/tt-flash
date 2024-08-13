@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 import time
 from typing import Union
 import sys
@@ -14,6 +15,77 @@ from pyluwen import detect_chips as luwen_detect_chips
 from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
 
 from tt_flash import utility
+from tt_flash.error import TTError
+
+
+@dataclass
+class FwVersion:
+    allow_exception: bool
+    exception: Exception
+    running: Optional[tuple[int, int, int, int]]
+    spi: Optional[tuple[int, int, int, int]]
+
+
+def get_bundle_version_v1(chip: TTChip) -> FwVersion:
+    """
+    Get the currently running bundle version for gs and wh, using a legacy method
+
+    @param chip
+
+    @return the detected fw bundle version.
+    """
+    running_bundle_version = None
+    spi_bundle_version = None
+    exception = None
+
+    try:
+        fw_version = chip.arc_msg(
+            chip.fw_defines["MSG_TYPE_FW_VERSION"], wait_for_done=True, arg0=0, arg1=0
+        )[0]
+
+        # Pre fw version 5 we don't have bundle support
+        # this version of tt-flash only works with bundled fw
+        # so it's safe to assume that we need to update
+        if fw_version >= chip.min_fw_version():
+            temp = chip.arc_msg(
+                chip.fw_defines["MSG_TYPE_FW_VERSION"],
+                wait_for_done=True,
+                arg0=1,
+                arg1=0,
+            )[0]
+
+            if temp not in [0xFFFFFFFF, 0xDEAD]:
+                patch = temp & 0xFF
+                minor = (temp >> 8) & 0xFF
+                major = (temp >> 16) & 0xFF
+                component = (temp >> 24) & 0xFF
+                running_bundle_version = (component, major, minor, patch)
+
+            # There is a version of the firmware that doesn't correctly return an error when setting arg0 to an unknown option.
+            # The running_bundle_version and fw_version can never be the same (as mandated by the version formatting) so I can safely check to see if they are the same when checking for this older FW.
+            if running_bundle_version != 0xDEAD and fw_version != running_bundle_version:
+                temp = chip.arc_msg(
+                    chip.fw_defines["MSG_TYPE_FW_VERSION"],
+                    wait_for_done=True,
+                    arg0=2,
+                    arg1=0,
+                )[0]
+
+                if temp not in [0xFFFFFFFF, 0xDEAD]:
+                    patch = temp & 0xFF
+                    minor = (temp >> 8) & 0xFF
+                    major = (temp >> 16) & 0xFF
+                    component = (temp >> 24) & 0xFF
+                    spi_bundle_version = (component, major, minor, patch)
+    except Exception as e:
+        exception = e
+
+    return FwVersion(
+        allow_exception = True,
+        exception = exception,
+        running = running_bundle_version,
+        spi = spi_bundle_version
+    )
 
 
 def get_chip_data(chip, file, internal: bool):
@@ -22,6 +94,8 @@ def get_chip_data(chip, file, internal: bool):
             prefix = "wormhole"
         elif isinstance(chip, GsChip):
             prefix = "grayskull"
+        elif isinstance(chip, BhChip):
+            prefix = "blackhole"
         else:
             raise TTError("Only support flashing Wh or GS chips")
         if internal:
@@ -105,15 +179,15 @@ class TTChip:
 
     def m3_fw_app_version(self):
         telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.smbus_tx_m3_app_fw_version)
+        return self.__vnum_to_version(telem.m3_app_fw_version)
 
     def smbus_fw_version(self):
         telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.smbus_tx_arc1_fw_version)
+        return self.__vnum_to_version(telem.arc1_fw_version)
 
     def arc_l2_fw_version(self):
         telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.smbus_tx_arc0_fw_version)
+        return self.__vnum_to_version(telem.arc0_fw_version)
 
     def board_type(self):
         return self.luwen_chip.pci_board_type()
@@ -149,6 +223,34 @@ class TTChip:
     def min_fw_version(self):
         pass
 
+    @abstractmethod
+    def get_bundle_version(self) -> FwVersion:
+        pass
+
+class BhChip(TTChip):
+    def min_fw_version(self):
+        return 0x0
+
+    def __repr__(self):
+        return f"Blackhole[{self.interface_id}]"
+
+
+    def get_bundle_version(self) -> FwVersion:
+        running = None
+        spi = None
+        exception = None
+        try:
+            telem = self.get_telemetry_unchanged()
+        except Exception as e:
+            exception = e
+
+        return FwVersion(
+            allow_exception = False,
+            exception = exception,
+            running = running,
+            spi = spi
+        )
+
 
 class WhChip(TTChip):
     def min_fw_version(self):
@@ -156,6 +258,9 @@ class WhChip(TTChip):
 
     def __repr__(self):
         return f"Wormhole[{self.interface_id}]"
+
+    def get_bundle_version(self) -> FwVersion:
+        return get_bundle_version_v1(self)
 
 
 class GsChip(TTChip):
@@ -165,8 +270,11 @@ class GsChip(TTChip):
     def __repr__(self):
         return f"Grayskull[{self.interface_id}]"
 
+    def get_bundle_version(self) -> FwVersion:
+        return get_bundle_version_v1(self)
 
-def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhChip]]:
+
+def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
     """
     This will create a chip which only gaurentees that you have communication with the chip.
     """
@@ -224,6 +332,8 @@ def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhCh
             output.append(GsChip(device.as_gs()))
         elif device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
+        elif device.as_bh() is not None:
+            output.append(BhChip(device.as_bh()))
         else:
             raise ValueError("Did not recognize board")
 
@@ -233,13 +343,15 @@ def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhCh
     return output
 
 
-def detect_chips(local_only: bool = False) -> list[Union[GsChip, WhChip]]:
+def detect_chips(local_only: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
     output = []
     for device in luwen_detect_chips(local_only=local_only):
         if device.as_gs() is not None:
             output.append(GsChip(device.as_gs()))
         elif device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
+        elif device.as_bh() is not None:
+            output.append(BhChip(device.as_bh()))
         else:
             raise ValueError("Did not recognize board")
 
