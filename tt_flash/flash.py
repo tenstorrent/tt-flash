@@ -449,7 +449,7 @@ def flash_chip_stage2(
         finally:
             signal.signal(signal.SIGINT, original_sigint_handler)
 
-    def perform_verify(chip, write):
+    def perform_verify(chip, write) -> Optional[Union[int, int]]:
         original_sigint_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, signal_handler)
 
@@ -457,16 +457,18 @@ def flash_chip_stage2(
             base_data = chip.spi_read(0, len(write))
 
             if base_data != write:
-                print("SPI mismatch!")
-                print("addr, actual, expected")
+                first_mismatch = None
+                mismatch_count = 0
                 for index, (a, b) in enumerate(zip(base_data, write)):
                     if a != b:
-                        print(hex(index), hex(a), hex(b))
-                return 1
+                        mismatch_count += 1
+                        if first_mismatch is None:
+                            first_mismatch = index
+                return first_mismatch, mismatch_count
         finally:
             signal.signal(signal.SIGINT, original_sigint_handler)
 
-        return 0
+        return None
 
     if CConfig.is_tty():
         print(
@@ -493,22 +495,38 @@ def flash_chip_stage2(
     if not CConfig.is_tty():
         print()
 
-    if perform_verify(chip, data.write) != 0:
+    verify_result = perform_verify(chip, data.write)
+    if verify_result is not None:
+        (first_mismatch, mismatch_count) = verify_result
+
         if CConfig.is_tty():
             print(f"\r\033[K", end="")
         print(
             f"\t\t\tIntial verification: {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}"
         )
-
         print(
-            "\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)",
-            end="",
-            flush=True,
+            f"\t\t\t\tFirst Mismatch at: {first_mismatch}"
         )
-        if not CConfig.is_tty():
-            print()
+        print(
+            f"\t\t\t\tFound {mismatch_count} mismatches"
+        )
+
+        if CConfig.is_tty():
+            print(
+                "\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)",
+                end="",
+                flush=True,
+            )
+        else:
+            print("\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)")
 
         perform_write(chip, data.write)
+
+        if CConfig.is_tty():
+            print("\r\033[K", end="")
+        print(
+            f"\t\t\tAttempted to write firmware one more time... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
+        )
 
         print(
             "\t\t\tVerifying second flash attempt... (this may also take up to 1 minute)",
@@ -518,11 +536,21 @@ def flash_chip_stage2(
         if not CConfig.is_tty():
             print()
 
-        if perform_verify(chip, data.write) != 0:
+        verify_result = perform_verify(chip, data.write)
+        if verify_result is not None:
+            (first_mismatch, mismatch_count) = verify_result
+
             if CConfig.is_tty():
                 print(f"\r\033[K", end="")
             print(
                 f"\t\t\tSecond verification {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}, please do not reset or poweroff the board and contact support for further assistance."
+            )
+
+            print(
+                f"\t\t\t\tFirst Mismatch at: {first_mismatch}"
+            )
+            print(
+                f"\t\t\t\tFound {mismatch_count} mismatches"
             )
             return None
 
@@ -696,7 +724,7 @@ def flash_chips(
                 )
         else:
             if rc != 0:
-                print(f"\t\tErrors detected during flash, will skip automatic reset...")
+                print(f"\t\tErrors detected during flash, skipping automatic reset...")
             else:
                 # Reset boards if necessary
                 mobo_dict_list = []
@@ -741,8 +769,8 @@ def flash_chips(
                     detect_chips()
 
     if rc == 0:
-        print(f"{CConfig.COLOR.GREEN}FLASH SUCCESS{CConfig.COLOR.ENDC}")
-    elif rc == 0:
-        print(f"{CConfig.COLOR.RED}FLASH FAILED{CConfig.COLOR.ENDC}")
+        print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
+    else:
+        print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}")
 
     return rc
