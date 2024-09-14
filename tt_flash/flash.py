@@ -567,7 +567,7 @@ def flash_chip_stage2(
         # There is a bug in m3 app version 5.8.0.1 where we can trigger a boot loop during the left to right copy.
         # In this condition we will disable the auto-reset before triggering the left to right copy.
         if chip.m3_fw_app_version() == (5, 8, 0, 1):
-            print("Mitiating bootloop bug")
+            print("Mitigating bootloop bug")
             triggered_reset_disable = False
             try:
                 chip.arc_msg(
