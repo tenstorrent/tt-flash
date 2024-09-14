@@ -706,7 +706,7 @@ def flash_chips(
     # If we flashed an X2 then we will wait for the copy to complete
     if triggered_copy:
         print(
-            f"\t\tFlash and verification for all chips completed, will now wait for for n300 remote copy to complete..."
+            f"\t\tFlash and verification for all chips completed, will now wait for n300 remote copy to complete..."
         )
         live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
