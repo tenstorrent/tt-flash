@@ -607,7 +607,7 @@ def verify_package(fw_package: tarfile.TarFile):
             # HACK(drosen): Would not have ended the last line with a '\n'
             print("\n")
         raise TTError(
-            "Could not find manifest in fw package, please check the the correct one was used."
+            "Could not find manifest in fw package, please check that the correct one was used."
         )
     manifest = json.loads(manifest_data.read())
 
