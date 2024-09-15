@@ -576,7 +576,7 @@ def flash_chip_stage2(
                 triggered_reset_disable = True
             except Exception as e:
                 print(
-                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
+                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset; please reboot/reset your system and flash again to initiate the left to right copy."
                 )
                 return None
             if triggered_reset_disable:
