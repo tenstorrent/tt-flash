@@ -748,7 +748,7 @@ def flash_chips(
                                 "nb_host_pci_idx" in entry.keys()
                                 and entry["nb_host_pci_idx"]
                             ):
-                                # remove the list of WH pcie index's from the reset list
+                                # remove the list of WH PCIe index's from the reset list
                                 wh_link_pci_indices = list(
                                     set(wh_link_pci_indices)
                                     - set(entry["nb_host_pci_idx"])
