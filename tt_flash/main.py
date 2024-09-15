@@ -181,7 +181,7 @@ def load_sys_config(path: Optional[Path]) -> Optional[dict]:
             )
 
         print(
-            "\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one"
+            "\n\tCould not find config in default search locations, if you need it, either pass it in explicitly or generate one"
         )
         print(
             f"\t{CConfig.COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CConfig.COLOR.ENDC}"
