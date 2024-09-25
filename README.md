@@ -1,6 +1,6 @@
 # tt-flash
 
-This is a utility to flash firmware blobs to tenstorrent devices, currently only Grayskull boards are supported, detected Wormhole devices will be skipped.
+This is a utility to flash firmware blobs to tenstorrent devices.
 
 ## Official Repository
 
