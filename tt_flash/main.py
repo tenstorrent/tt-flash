@@ -181,7 +181,7 @@ def load_sys_config(path: Optional[Path]) -> Optional[dict]:
             )
 
         print(
-            "\n\tCould not find config in default search locations, if you need it, either pass it in explicity or generate one"
+            "\n\tCould not find config in default search locations, if you need it, either pass it in explicitly or generate one"
         )
         print(
             f"\t{CConfig.COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CConfig.COLOR.ENDC}"
@@ -234,7 +234,7 @@ def main():
     if args.command == "version":
         if int_version < (0, 2):
             raise TTError(
-                f"The flash package ({args.fw_tar}) does not support recovery you need package with a (0, 2)+ format"
+                f"The flash package ({args.fw_tar}) does not support recovery, you need package with a (0, 2)+ format"
             )
 
         for dev in devices:
@@ -243,7 +243,7 @@ def main():
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
         if int_version[0] > 1:
             raise TTError(
-                f"Unsupported version ({version}) this flash program only supports flashing pre 2.0 packages"
+                f"Unsupported version ({version}), this flash program only supports flashing pre 2.0 packages"
             )
 
         return flash_chips(

@@ -567,7 +567,7 @@ def flash_chip_stage2(
         # There is a bug in m3 app version 5.8.0.1 where we can trigger a boot loop during the left to right copy.
         # In this condition we will disable the auto-reset before triggering the left to right copy.
         if chip.m3_fw_app_version() == (5, 8, 0, 1):
-            print("Mitiating bootloop bug")
+            print("Mitigating bootloop bug")
             triggered_reset_disable = False
             try:
                 chip.arc_msg(
@@ -576,7 +576,7 @@ def flash_chip_stage2(
                 triggered_reset_disable = True
             except Exception as e:
                 print(
-                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset please reboot/reset your system and flash again to initiate the left to right copy."
+                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset; please reboot/reset your system and flash again to initiate the left to right copy."
                 )
                 return None
             if triggered_reset_disable:
@@ -607,7 +607,7 @@ def verify_package(fw_package: tarfile.TarFile):
             # HACK(drosen): Would not have ended the last line with a '\n'
             print("\n")
         raise TTError(
-            "Could not find manifest in fw package, please check the the correct one was used."
+            "Could not find manifest in fw package, please check that the correct one was used."
         )
     manifest = json.loads(manifest_data.read())
 
@@ -706,7 +706,7 @@ def flash_chips(
     # If we flashed an X2 then we will wait for the copy to complete
     if triggered_copy:
         print(
-            f"\t\tFlash and verification for all chips completed, will now wait for for n300 remote copy to complete..."
+            f"\t\tFlash and verification for all chips completed, will now wait for n300 remote copy to complete..."
         )
         live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
@@ -748,7 +748,7 @@ def flash_chips(
                                 "nb_host_pci_idx" in entry.keys()
                                 and entry["nb_host_pci_idx"]
                             ):
-                                # remove the list of WH pcie index's from the reset list
+                                # remove the list of WH PCIe index's from the reset list
                                 wh_link_pci_indices = list(
                                     set(wh_link_pci_indices)
                                     - set(entry["nb_host_pci_idx"])

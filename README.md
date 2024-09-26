@@ -171,8 +171,8 @@ Stage: FLASH
                 Flash and verification for all chips completed, will now wait for for n300 remote copy to complete...
                 Remote copy completed
 Stage: RESET
- Starting pci link reset on WH devices at pci indices: 1
- Finishing pci link reset on WH devices at pci indices: 1
+ Starting PCI link reset on WH devices at PCI indices: 1
+ Finishing PCI link reset on WH devices at PCI indices: 1
 
 FLASH SUCCESS
 ```
