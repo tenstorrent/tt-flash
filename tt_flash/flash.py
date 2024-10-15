@@ -16,11 +16,13 @@ from typing import Callable, Optional, Union
 import sys
 
 import tt_flash
-from tt_flash.chip import TTChip, GsChip, detect_chips
+from tt_flash.blackhole import boot_fs_write
+from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
 from tt_flash.error import TTError
 from tt_flash.utility import change_to_public_name, get_board_type, CConfig
 
 from tt_tools_common.reset_common.wh_reset import WHChipReset
+from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
 
 
@@ -253,9 +255,7 @@ def flash_chip_stage1(
         detected_version = False
         print("\t\t\tForced ROM update requested. ROM will now be updated.")
     # Best check is for if we have already flashed the desired fw (or newer fw) to spi
-    elif (
-        fw_bundle_version.spi is not None
-    ):
+    elif fw_bundle_version.spi is not None:
         if fw_bundle_version.spi >= manifest.bundle_version:
             # Now that we know if the SPI is newer we should check to see if the problem is that we have flashed the correct FW, but are running something too old
             if fw_bundle_version.running is not None:
@@ -274,9 +274,7 @@ def flash_chip_stage1(
                 state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
             )
     # We did not see any spi versions returned... just go by running
-    elif (
-        fw_bundle_version.running is not None
-    ):
+    elif fw_bundle_version.running is not None:
         if fw_bundle_version.running >= manifest.bundle_version:
             print("\t\t\tROM does not need to be updated.")
             return FlashStageResult(
@@ -327,77 +325,106 @@ def flash_chip_stage1(
     # First we verify that the format of mask is valid so we don't partially flash before discovering that the mask is invalid
     mask = json.loads(mask.read())
 
-    # I expected to see a list of dicts, with the keys
-    # "start", "end", "tag"
-    param_handlers = []
-    for v in mask:
-        start = v.get("start", None)
-        end = v.get("end", None)
-        tag = v.get("tag", None)
-
-        if (
-            (start is None or not isinstance(start, int))
-            or (end is None or not isinstance(end, int))
-            or (tag is None or not isinstance(tag, str))
-        ):
-            raise TTError(
-                f"Invalid mask format for {boardname_to_display}; expected to see a list of dicts with keys 'start', 'end', 'tag'"
-            )
-
-        if tag in TAG_HANDLERS:
-            param_handlers.append(((start, end), TAG_HANDLERS[tag]))
-        else:
-            if len(TAG_HANDLERS) > 0:
-                pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
-                pretty_tags[-1] = f"or {pretty_tags[-1]}"
-                raise TTError(
-                    f"Invalid tag {tag} for {boardname_to_display}; expected to see one of {pretty_tags}"
-                )
-            else:
-                raise TTError(
-                    f"Invalid tag {tag} for {boardname_to_display}; there aren't any tags defined!"
-                )
-
     # Now we load the image and start replacing parameters
     image = image.read()
 
-    writes = []
+    if isinstance(chip, BhChip):
+        writes = []
 
-    curr_addr = 0
-    for line in image.decode("utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("@"):
-            curr_addr = int(line.lstrip("@").strip())
-        else:
-            data = b16decode(line)
+        curr_addr = 0
+        for line in image.decode("utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("@"):
+                curr_addr = int(line.lstrip("@").strip())
+            else:
+                data = b16decode(line)
+                curr_stop = curr_addr + len(data)
+                if not isinstance(data, bytes):
+                    data = bytes(data)
+                writes.append((curr_addr, data))
 
-            curr_stop = curr_addr + len(data)
+                curr_addr = curr_stop
 
-            for (start, end), handler in param_handlers:
-                if start < curr_stop and end > curr_addr:
-                    # chip, data, spi_addr, data_addr, len
-                    if not isinstance(data, bytearray):
-                        data = bytearray(data)
-                    data = handler(chip, data, start, start - curr_addr, end - start)
-                elif start >= curr_addr and start < curr_stop and end >= curr_stop:
+        writes.sort(key=lambda x: x[0])
+
+        write = bytearray()
+        last_addr = 0
+        for addr, data in writes:
+            write.extend([0xFF] * (addr - last_addr))
+            write.extend(data)
+            last_addr = addr + len(data)
+
+        write = boot_fs_write(chip, boardname_to_display, mask, write)
+    else:
+        # I expected to see a list of dicts, with the keys
+        # "start", "end", "tag"
+        param_handlers = []
+        for v in mask:
+            start = v.get("start", None)
+            end = v.get("end", None)
+            tag = v.get("tag", None)
+
+            if (
+                (start is None or not isinstance(start, int))
+                or (end is None or not isinstance(end, int))
+                or (tag is None or not isinstance(tag, str))
+            ):
+                raise TTError(
+                    f"Invalid mask format for {boardname_to_display}; expected to see a list of dicts with keys 'start', 'end', 'tag'"
+                )
+
+            if tag in TAG_HANDLERS:
+                param_handlers.append(((start, end), TAG_HANDLERS[tag]))
+            else:
+                if len(TAG_HANDLERS) > 0:
+                    pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
+                    pretty_tags[-1] = f"or {pretty_tags[-1]}"
                     raise TTError(
-                        f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname_to_display}! This is not supported."
+                        f"Invalid tag {tag} for {boardname_to_display}; expected to see one of {pretty_tags}"
                     )
+                else:
+                    raise TTError(
+                        f"Invalid tag {tag} for {boardname_to_display}; there aren't any tags defined!"
+                    )
+        writes = []
 
-            if not isinstance(data, bytes):
-                data = bytes(data)
-            writes.append((curr_addr, data))
+        curr_addr = 0
+        for line in image.decode("utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("@"):
+                curr_addr = int(line.lstrip("@").strip())
+            else:
+                data = b16decode(line)
 
-            curr_addr = curr_stop
+                curr_stop = curr_addr + len(data)
 
-    writes.sort(key=lambda x: x[0])
+                for (start, end), handler in param_handlers:
+                    if start < curr_stop and end > curr_addr:
+                        # chip, data, spi_addr, data_addr, len
+                        if not isinstance(data, bytearray):
+                            data = bytearray(data)
+                        data = handler(
+                            chip, data, start, start - curr_addr, end - start
+                        )
+                    elif start >= curr_addr and start < curr_stop and end >= curr_stop:
+                        raise TTError(
+                            f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname_to_display}! This is not supported."
+                        )
 
-    write = bytearray()
-    last_addr = 0
-    for addr, data in writes:
-        write.extend([0xFF] * (addr - last_addr))
-        write.extend(data)
-        last_addr = addr + len(data)
+                if not isinstance(data, bytes):
+                    data = bytes(data)
+                writes.append((curr_addr, data))
+
+                curr_addr = curr_stop
+
+        writes.sort(key=lambda x: x[0])
+
+        write = bytearray()
+        last_addr = 0
+        for addr, data in writes:
+            write.extend([0xFF] * (addr - last_addr))
+            write.extend(data)
+            last_addr = addr + len(data)
 
     if boardname in ["NEBULA_X1", "NEBULA_X2"]:
         print(
@@ -420,6 +447,8 @@ def flash_chip_stage1(
                 f"\t\t\t\t{CConfig.COLOR.YELLOW}Fail:{CConfig.COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
             )
             can_reset = False
+    elif boardname in ["P100_REV1"]:
+        can_reset = True
     else:
         can_reset = False
 
@@ -503,12 +532,8 @@ def flash_chip_stage2(
         print(
             f"\t\t\tIntial verification: {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}"
         )
-        print(
-            f"\t\t\t\tFirst Mismatch at: {first_mismatch}"
-        )
-        print(
-            f"\t\t\t\tFound {mismatch_count} mismatches"
-        )
+        print(f"\t\t\t\tFirst Mismatch at: {first_mismatch}")
+        print(f"\t\t\t\tFound {mismatch_count} mismatches")
 
         if CConfig.is_tty():
             print(
@@ -517,7 +542,9 @@ def flash_chip_stage2(
                 flush=True,
             )
         else:
-            print("\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)")
+            print(
+                "\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)"
+            )
 
         perform_write(chip, data.write)
 
@@ -545,12 +572,8 @@ def flash_chip_stage2(
                 f"\t\t\tSecond verification {CConfig.COLOR.RED}failed{CConfig.COLOR.ENDC}, please do not reset or poweroff the board and contact support for further assistance."
             )
 
-            print(
-                f"\t\t\t\tFirst Mismatch at: {first_mismatch}"
-            )
-            print(
-                f"\t\t\t\tFound {mismatch_count} mismatches"
-            )
+            print(f"\t\t\t\tFirst Mismatch at: {first_mismatch}")
+            print(f"\t\t\t\tFound {mismatch_count} mismatches")
             return None
 
     if CConfig.is_tty():
@@ -668,7 +691,8 @@ def flash_chips(
 
     flash_data = []
     flash_error = []
-    needs_reset = []
+    needs_reset_wh = []
+    needs_reset_bh = []
     for chip, boardname in zip(devices, to_flash):
         print(
             f"\t\t{CConfig.COLOR.GREEN}Sub Stage{CConfig.COLOR.ENDC} FLASH Step 1: {CConfig.COLOR.BLUE}{chip}{CConfig.COLOR.ENDC}"
@@ -687,7 +711,10 @@ def flash_chips(
         elif result.state == FlashStageResultState.Ok:
             flash_data.append((chip, result.data))
             if result.can_reset:
-                needs_reset.append(chip.interface_id)
+                if isinstance(chip, WhChip):
+                    needs_reset_wh.append(chip.interface_id)
+                elif isinstance(chip, BhChip):
+                    needs_reset_bh.append(chip.interface_id)
 
     rc = 0
 
@@ -709,7 +736,7 @@ def flash_chips(
         )
         live_countdown(15.0, "\t\tRemote copy", print_initial=False)
 
-    if len(needs_reset) > 0:
+    if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
 
         if no_reset:
@@ -755,16 +782,23 @@ def flash_chips(
                             sys_config["wh_link_reset"][
                                 "pci_index"
                             ] = wh_link_pci_indices
-                        needs_reset = [
+                        needs_reset_wh = [
                             idx
                             for idx in sys_config["wh_link_reset"]["pci_index"]
-                            if idx in needs_reset
+                            if idx in needs_reset_wh
                         ]
 
-                if len(needs_reset) > 0:
+                if len(needs_reset_wh) > 0:
                     WHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset, reset_m3=True
+                        pci_interfaces=needs_reset_wh, reset_m3=True
                     )
+
+                if len(needs_reset_bh) > 0:
+                    BHChipReset().full_lds_reset(
+                        pci_interfaces=needs_reset_bh, reset_m3=True
+                    )
+
+                if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
                     detect_chips()
 
     if rc == 0:

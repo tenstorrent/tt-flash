@@ -3,6 +3,13 @@
 
 import os
 
+from typing import Callable, Type, TYPE_CHECKING
+
+from base64 import b16decode
+
+if TYPE_CHECKING:
+    from tt_flash.chip import TTChip
+
 try:
     from importlib.resources import files, as_file
 except (ModuleNotFoundError, ImportError):
