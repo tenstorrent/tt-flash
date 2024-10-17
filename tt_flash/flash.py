@@ -199,7 +199,6 @@ def flash_chip_stage1(
         # Ok to keep going if there's a timeout
         pass
 
-    exception = None
     fw_bundle_version = chip.get_bundle_version()
 
     if fw_bundle_version.exception is not None:
@@ -208,16 +207,16 @@ def flash_chip_stage1(
             # so it's safe to assume that we need to update
             if force:
                 print(
-                    f"\t\t\tHit error {e} while trying to determine running firmware. Falling back to assuming that it needs an update"
+                    f"\t\t\tHit error {fw_bundle_version.exception} while trying to determine running firmware. Falling back to assuming that it needs an update"
                 )
             else:
                 raise TTError(
-                    f"Hit error {e} while trying to determine running firmware. If you know what you are doing you may still update by re-rerunning using the --force flag."
+                    f"Hit error {fw_bundle_version.exception} while trying to determine running firmware. If you know what you are doing you may still update by re-rerunning using the --force flag."
                 )
         else:
             # BH must always successfully be able to return a fw_version
             raise TTError(
-                f"Hit error {e} while trying to determine running firmware."
+                f"Hit error {fw_bundle_version.exception} while trying to determine running firmware."
             )
 
     bundle_version = None

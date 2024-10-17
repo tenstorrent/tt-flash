@@ -6,7 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import time
-from typing import Union
+from typing import Union, Optional
 import sys
 import yaml
 
@@ -21,7 +21,7 @@ from tt_flash.error import TTError
 @dataclass
 class FwVersion:
     allow_exception: bool
-    exception: Exception
+    exception: Optional[Exception]
     running: Optional[tuple[int, int, int, int]]
     spi: Optional[tuple[int, int, int, int]]
 
