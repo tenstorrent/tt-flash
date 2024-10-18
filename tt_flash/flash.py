@@ -447,7 +447,7 @@ def flash_chip_stage1(
                 f"\t\t\t\t{CConfig.COLOR.YELLOW}Fail:{CConfig.COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
             )
             can_reset = False
-    elif boardname in ["P100_REV1"]:
+    elif boardname in ["P100-1", "P150A-1"]:
         can_reset = True
     else:
         can_reset = False

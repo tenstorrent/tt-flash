@@ -83,8 +83,10 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
         return "NEBULA_X1"
     elif upi == 0x35:
         return "WH_UBB"
-    elif upi == 0x31:
-        return "P100_REV1"
+    elif upi == 0x36:
+        return "P100-1"
+    elif upi == 0x40:
+        return "P150A-1"
     else:
         return None
 
@@ -97,7 +99,8 @@ def change_to_public_name(codename: str) -> str:
         "NEBULA_X1": "n150",
         "NEBULA_X2": "n300",
         "WH_UBB": "Galaxy Wormhole",
-        "P100_REV1": "p100",
+        "P100-1": "p100",
+        "P150A-1": "p150a",
     }
 
     boardname = name_map.get(codename)
