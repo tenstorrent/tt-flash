@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for flashing the BH tt-boot-fs file format
+- Bumped luwen version to 0.4.6 to allow resets when chip is inaccessible
 
 ## 3.0.2 - 17/10/2024
 
@@ -19,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 3.0.1 - 16/10/2024
 
 ### Changed
-- Bumped luwen version to 0.4.6 to resolve false positives on bad chip detection
+- Bumped luwen version to 0.4.5 to resolve false positives on bad chip detection
 
 ## 3.0.0 - 23/08/2024
 
