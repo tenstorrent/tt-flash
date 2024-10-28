@@ -17,7 +17,6 @@ import tt_flash
 from tt_flash import utility
 from tt_flash.error import TTError
 from tt_flash.utility import CConfig
-from tt_flash.version import extract_fw_versions
 from tt_flash.flash import flash_chips
 
 from .chip import detect_local_chips
@@ -113,14 +112,25 @@ def parse_args():
         action="store_true",
     )
 
-    # version = subparsers.add_parser("version")
-    # version.add_argument("--fw-tar", help="Path to the firmware tarball", required=True)
-    # version.add_argument(
-    #     "--verbose",
-    #     default=False,
-    #     action="store_true",
-    #     help="Add more detailed information to the output",
-    # )
+    verify = subparsers.add_parser(
+        "verify",
+        help="Verify the contents of the SPI.\nWill display the currently running and flashed bundle version of the fw and checksum the fw against either what was flashed previously according the the file system state, or a given fw bundle.\nIn the case where a fw bundle or flash record are not provided the program will search known locations that the flash record may have been written to and exit with an error if it cannot be found or read.",
+    )
+    config_group = verify.add_mutually_exclusive_group()
+    config_group.add_argument(
+        "--sys-config",
+        help="Path to the pre generated sys-config json",
+        default=None,
+        type=Path,
+    )
+    config_group.add_argument("--fw-tar", help="Path to the firmware tarball")
+    verify.add_argument(
+        "--skip-missing-fw",
+        help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
+        default=False,
+        action="store_true",
+        required=False,
+    )
 
     cmd_args = sys.argv.copy()[1:]
 
@@ -193,27 +203,17 @@ def load_sys_config(path: Optional[Path]) -> Optional[dict]:
         return json.load(open(path))
 
 
-def main():
-    parser, args = parse_args()
-
-    CConfig.force_no_tty = args.no_tty
-    CConfig.COLOR.use_color = not args.no_color
-
-    try:
-        tar = tarfile.open(args.fw_tar, "r")
-    except Exception as e:
-        print(f"Opening of {args.fw_tar} failed with - {e}\n\n---\n")
-        parser.print_help()
-        sys.exit(1)
+def load_manifest(path: str):
+    tar = tarfile.open(path, "r")
 
     manifest_data = tar.extractfile("./manifest.json")
     if manifest_data is None:
-        raise TTError(f"Could not find manifest in {args.fw_tar}")
+        raise TTError(f"Could not find manifest in {path}")
 
     manifest = json.loads(manifest_data.read())
     version = manifest.get("version", None)
     if version is None:
-        raise TTError(f"Could not find version in {args.fw_tar}/manifest.json")
+        raise TTError(f"Could not find version in {path}/manifest.json")
 
     try:
         int_version = tuple(map(int, version.split(".")))
@@ -223,27 +223,35 @@ def main():
         int_version = None
 
     if int_version is None:
-        raise TTError(f"Invalid version ({version}) in {args.fw_tar}/manifest.json")
+        raise TTError(f"Invalid version ({version}) in {path}/manifest.json")
 
-    print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
-    config = load_sys_config(args.sys_config)
+    return tar, int_version
 
-    print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
-    devices = detect_local_chips(ignore_ethernet=True)
 
-    if args.command == "version":
-        if int_version < (0, 2):
-            raise TTError(
-                f"The flash package ({args.fw_tar}) does not support recovery, you need package with a (0, 2)+ format"
-            )
+def main():
+    parser, args = parse_args()
 
-        for dev in devices:
-            fw_versions = extract_fw_versions(dev, tar)
-    elif args.command == "flash":
+    CConfig.force_no_tty = args.no_tty
+    CConfig.COLOR.use_color = not args.no_color
+
+    if args.command == "flash":
+        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
+        try:
+            tar, version = load_manifest(args.fw_tar)
+        except Exception as e:
+            print(f"Opening of {args.fw_tar} failed with - {e}\n\n---\n")
+            parser.print_help()
+            sys.exit(1)
+
+        config = load_sys_config(args.sys_config)
+
+        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
+        devices = detect_local_chips(ignore_ethernet=True)
+
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
-        if int_version[0] > 1:
+        if version[0] > 1:
             raise TTError(
-                f"Unsupported version ({version}), this flash program only supports flashing pre 2.0 packages"
+                f"Unsupported version ({'.'.join(map(str, version))}) this flash program only supports flashing pre 2.0 packages"
             )
 
         return flash_chips(

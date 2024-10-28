@@ -63,7 +63,10 @@ def get_bundle_version_v1(chip: TTChip) -> FwVersion:
 
             # There is a version of the firmware that doesn't correctly return an error when setting arg0 to an unknown option.
             # The running_bundle_version and fw_version can never be the same (as mandated by the version formatting) so I can safely check to see if they are the same when checking for this older FW.
-            if running_bundle_version != 0xDEAD and fw_version != running_bundle_version:
+            if (
+                running_bundle_version != 0xDEAD
+                and fw_version != running_bundle_version
+            ):
                 temp = chip.arc_msg(
                     chip.fw_defines["MSG_TYPE_FW_VERSION"],
                     wait_for_done=True,
@@ -81,10 +84,10 @@ def get_bundle_version_v1(chip: TTChip) -> FwVersion:
         exception = e
 
     return FwVersion(
-        allow_exception = True,
-        exception = exception,
-        running = running_bundle_version,
-        spi = spi_bundle_version
+        allow_exception=True,
+        exception=exception,
+        running=running_bundle_version,
+        spi=spi_bundle_version,
     )
 
 
@@ -227,13 +230,13 @@ class TTChip:
     def get_bundle_version(self) -> FwVersion:
         pass
 
+
 class BhChip(TTChip):
     def min_fw_version(self):
         return 0x0
 
     def __repr__(self):
         return f"Blackhole[{self.interface_id}]"
-
 
     def get_bundle_version(self) -> FwVersion:
         running = None
@@ -245,10 +248,7 @@ class BhChip(TTChip):
             exception = e
 
         return FwVersion(
-            allow_exception = False,
-            exception = exception,
-            running = running,
-            spi = spi
+            allow_exception=False, exception=exception, running=running, spi=spi
         )
 
 
@@ -274,7 +274,9 @@ class GsChip(TTChip):
         return get_bundle_version_v1(self)
 
 
-def detect_local_chips(ignore_ethernet: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
+def detect_local_chips(
+    ignore_ethernet: bool = False,
+) -> list[Union[GsChip, WhChip, BhChip]]:
     """
     This will create a chip which only gaurentees that you have communication with the chip.
     """
