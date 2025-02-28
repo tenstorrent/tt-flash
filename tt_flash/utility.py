@@ -87,6 +87,12 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
         return "P100-1"
     elif upi == 0x40:
         return "P150A-1"
+    elif upi == 0x41:
+        return "P150-1"
+    elif upi == 0x42:
+        return "P150C-1"
+    elif upi == 0x43:
+        return "P100A-1"
     else:
         return None
 
