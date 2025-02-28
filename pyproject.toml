@@ -1,6 +1,6 @@
 [project]
 name = "tt-flash"
-version = "3.1.1"
+version = "3.1.2"
 description = "Utility to flash firmware blobs to tt devices"
 readme = "README.md"
 requires-python = ">=3.7"
