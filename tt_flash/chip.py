@@ -248,7 +248,7 @@ class BhChip(TTChip):
             exception = e
 
         return FwVersion(
-            allow_exception=False, exception=exception, running=running, spi=spi
+            allow_exception=True, exception=exception, running=running, spi=spi
         )
 
 
