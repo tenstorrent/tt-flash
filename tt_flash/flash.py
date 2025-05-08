@@ -678,12 +678,17 @@ def flash_chips(
             f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed"
         )
         try:
-            boardname = get_board_type(dev.board_type(), from_type=True)
+            board_type = dev.board_type()
+            boardname = get_board_type(dev, dev.board_type(), from_type=True)
+            if boardname is not None and boardname.startswith("P300") and manifest.bundle_version <= (80, 18, 1, 0):
+                raise TTError(f"FW Bundle {manifest.bundle_version} is too old to be flashed onto the P300 support for these boards starts at 18.2.0")
         except:
+            board_type = None
             boardname = None
 
         if boardname is None:
-            raise TTError(f"Did not recognize board type for {dev}")
+            board_type = f"({board_type})" if board_type is not None else ""
+            raise TTError(f"Did not recognize board type  for {dev}")
 
         to_flash.append(boardname)
 
