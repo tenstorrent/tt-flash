@@ -244,6 +244,7 @@ class BhChip(TTChip):
         exception = None
         try:
             telem = self.get_telemetry_unchanged()
+            running = telem.fw_bundle_version
         except Exception as e:
             exception = e
 
