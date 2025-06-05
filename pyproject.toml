@@ -1,6 +1,6 @@
 [project]
 name = "tt-flash"
-version = "3.3.2"
+version = "3.3.3"
 description = "Utility to flash firmware blobs to tt devices"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -35,7 +35,7 @@ dependencies = [
   # This is a hack to get around the lack of the files function in importlib-resources pre 3.9.
   "importlib-resources >= 1.3.0; python_version < '3.9'",
 
-  "tt-tools-common @ git+https://github.com/tenstorrent/tt-tools-common.git@v1.4.15",
+  "tt-tools-common @ git+https://github.com/tenstorrent/tt-tools-common.git@v1.4.16",
 ]
 
 optional-dependencies.dev = [
