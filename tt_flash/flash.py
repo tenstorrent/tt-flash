@@ -17,6 +17,7 @@ import sys
 
 import tt_flash
 from tt_flash.blackhole import boot_fs_write
+from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
 from tt_flash.error import TTError
 from tt_flash.utility import change_to_public_name, get_board_type, CConfig
@@ -151,10 +152,9 @@ def live_countdown(wait_time: float, name: str, print_initial: bool = True):
         time.sleep(wait_time)
         print(f"{name} completed")
 
-
 @dataclass
 class FlashData:
-    write: bytes
+    write: list[FlashWrite]
     name: str
     idname: str
 
@@ -339,22 +339,15 @@ def flash_chip_stage1(
             else:
                 data = b16decode(line)
                 curr_stop = curr_addr + len(data)
-                if not isinstance(data, bytes):
-                    data = bytes(data)
-                writes.append((curr_addr, data))
+                if not isinstance(data, bytearray):
+                    data = bytearray(data)
+                writes.append(FlashWrite(curr_addr, data))
 
                 curr_addr = curr_stop
 
-        writes.sort(key=lambda x: x[0])
+        writes.sort(key=lambda x: x.offset)
 
-        write = bytearray()
-        last_addr = 0
-        for addr, data in writes:
-            write.extend([0xFF] * (addr - last_addr))
-            write.extend(data)
-            last_addr = addr + len(data)
-
-        write = boot_fs_write(chip, boardname_to_display, mask, write)
+        writes = boot_fs_write(chip, boardname_to_display, mask, writes)
     else:
         # I expected to see a list of dicts, with the keys
         # "start", "end", "tag"
@@ -413,18 +406,12 @@ def flash_chip_stage1(
 
                 if not isinstance(data, bytes):
                     data = bytes(data)
-                writes.append((curr_addr, data))
+                writes.append(FlashWrite(curr_addr, data))
 
                 curr_addr = curr_stop
 
-        writes.sort(key=lambda x: x[0])
+        writes.sort(key=lambda x: x.offset)
 
-        write = bytearray()
-        last_addr = 0
-        for addr, data in writes:
-            write.extend([0xFF] * (addr - last_addr))
-            write.extend(data)
-            last_addr = addr + len(data)
 
     if boardname in ["NEBULA_X1", "NEBULA_X2"]:
         print(
@@ -456,7 +443,7 @@ def flash_chip_stage1(
         state=FlashStageResultState.Ok,
         can_reset=can_reset,
         msg="",
-        data=FlashData(write=write, name=boardname_to_display, idname=boardname),
+        data=FlashData(write=writes, name=boardname_to_display, idname=boardname),
     )
 
 
@@ -468,31 +455,33 @@ def flash_chip_stage2(
     def signal_handler(sig, frame):
         print("Ctrl-C Caught: this process should not be interrupted")
 
-    def perform_write(chip, write):
+    def perform_write(chip, writes: FlashWrite):
         original_sigint_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, signal_handler)
 
         try:
-            chip.spi_write(0, write)
+            for write in writes:
+                chip.spi_write(write.offset, write.write)
         finally:
             signal.signal(signal.SIGINT, original_sigint_handler)
 
-    def perform_verify(chip, write) -> Optional[Union[int, int]]:
+    def perform_verify(chip, writes: FlashWrite) -> Optional[Union[int, int]]:
         original_sigint_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, signal_handler)
 
         try:
-            base_data = chip.spi_read(0, len(write))
+            for write in writes:
+                base_data = chip.spi_read(write.offset, len(write.write))
 
-            if base_data != write:
-                first_mismatch = None
-                mismatch_count = 0
-                for index, (a, b) in enumerate(zip(base_data, write)):
-                    if a != b:
-                        mismatch_count += 1
-                        if first_mismatch is None:
-                            first_mismatch = index
-                return first_mismatch, mismatch_count
+                if base_data != write.write:
+                    first_mismatch = None
+                    mismatch_count = 0
+                    for index, (a, b) in enumerate(zip(base_data, write.write)):
+                        if a != b:
+                            mismatch_count += 1
+                            if first_mismatch is None:
+                                first_mismatch = index
+                    return first_mismatch, mismatch_count
         finally:
             signal.signal(signal.SIGINT, original_sigint_handler)
 
