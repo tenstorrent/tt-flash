@@ -243,7 +243,23 @@ class BhChip(TTChip):
         spi = None
         exception = None
         try:
+            # Read running FW bundle version from telemetry
             telem = self.get_telemetry_unchanged()
+            temp = telem.fw_bundle_version
+            patch = temp & 0xFF
+            minor = (temp >> 8) & 0xFF
+            major = (temp >> 16) & 0xFF
+            component = (temp >> 24) & 0xFF
+            running = (component, major, minor, patch)
+
+            # Read SPI FW bundle version
+            cmfwcfg = self.luwen_chip.decode_boot_fs_table("cmfwcfg")
+            temp = cmfwcfg["fw_bundle_version"]
+            patch = temp & 0xFF
+            minor = (temp >> 8) & 0xFF
+            major = (temp >> 16) & 0xFF
+            component = (temp >> 24) & 0xFF
+            spi = (component, major, minor, patch)
         except Exception as e:
             exception = e
 
