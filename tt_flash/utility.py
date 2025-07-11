@@ -7,6 +7,8 @@ from typing import Callable, Type, TYPE_CHECKING
 
 from base64 import b16decode
 
+from tt_flash.error import TTError
+
 if TYPE_CHECKING:
     from tt_flash.chip import TTChip
 
@@ -36,7 +38,7 @@ def application_path():
     return application_path
 
 
-def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
+def get_board_type(dev: "TTChip", board_id: int, from_type: bool = False) -> Optional[str]:
     """
     Get board type from board ID string.
     Ex:
@@ -49,6 +51,8 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
                    |     | +------------- C = Revision
                    |     +--------------- BBBBB = Unique Part Identifier (UPI)
                    +--------------------- AA
+
+    For the p300 the pcie index is used to identify the left and right chip
     """
     if from_type:
         upi = board_id
@@ -93,6 +97,23 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
         return "P150C-1"
     elif upi == 0x43:
         return "P100A-1"
+    elif upi in [0x45, 0x44, 0x46]:
+        telemetry = dev.get_telemetry_unchanged()
+        p300_selection = telemetry.asic_location
+        if p300_selection is None:
+            raise TTError("Was not able to fetch the asic location; this is required to flash the correct fw on the P300")
+        side = "left" if p300_selection else "right"
+
+        if upi == 0x45:
+            name = "P300A-1"
+        elif upi == 0x44:
+            name = "P300B-1"
+        elif upi == 0x46:
+            name = "P300C-1"
+        else:
+            return None
+
+        return f"{name}_{side}"
     else:
         return None
 
@@ -109,6 +130,9 @@ def change_to_public_name(codename: str) -> str:
         "P150A-1": "p150a",
         "P150B-1": "p150b",
         "P150C-1": "p150c",
+        "P300A-1": "p300a",
+        "P300B-1": "p300b",
+        "P300C-1": "p300c",
     }
 
     boardname = name_map.get(codename)
