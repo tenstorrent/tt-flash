@@ -234,36 +234,39 @@ def main():
     CConfig.force_no_tty = args.no_tty
     CConfig.COLOR.use_color = not args.no_color
 
-    if args.command == "flash":
-        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
-        try:
-            tar, version = load_manifest(args.fw_tar)
-        except Exception as e:
-            print(f"Opening of {args.fw_tar} failed with - {e}\n\n---\n")
-            parser.print_help()
-            sys.exit(1)
+    try:
+        if args.command == "flash":
+            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
+            try:
+                tar, version = load_manifest(args.fw_tar)
+            except Exception as e:
+                print(f"Opening of {args.fw_tar} failed with - {e}\n\n---\n")
+                parser.print_help()
+                sys.exit(1)
 
-        config = load_sys_config(args.sys_config)
+            config = load_sys_config(args.sys_config)
 
-        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
-        devices = detect_local_chips(ignore_ethernet=True)
+            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
+            devices = detect_local_chips(ignore_ethernet=True)
 
-        print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
-        if version[0] > 1:
-            raise TTError(
-                f"Unsupported version ({'.'.join(map(str, version))}) this flash program only supports flashing pre 2.0 packages"
+            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
+            if version[0] > 1:
+                raise TTError(
+                    f"Unsupported version ({'.'.join(map(str, version))}) this flash program only supports flashing pre 2.0 packages"
+                )
+
+            return flash_chips(
+                config,
+                devices,
+                tar,
+                args.force,
+                args.no_reset,
+                skip_missing_fw=args.skip_missing_fw,
             )
-
-        return flash_chips(
-            config,
-            devices,
-            tar,
-            args.force,
-            args.no_reset,
-            skip_missing_fw=args.skip_missing_fw,
-        )
-    else:
-        raise TTError(f"No handler for command {args.command}.")
+        else:
+            raise TTError(f"No handler for command {args.command}.")
+    except Exception as e:
+        print(f"{CConfig.COLOR.RED}Error: {e} {CConfig.COLOR.ENDC}")
 
 
 if __name__ == "__main__":
