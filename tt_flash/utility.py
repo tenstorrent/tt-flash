@@ -93,6 +93,12 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
         return "P150C-1"
     elif upi == 0x43:
         return "P100A-1"
+    elif upi == 0x44:
+        return "P300B-1"
+    elif upi == 0x45:
+        return "P300A-1"
+    elif upi == 0x46:
+        return "P300C-1"
     else:
         return None
 
@@ -109,6 +115,9 @@ def change_to_public_name(codename: str) -> str:
         "P150A-1": "p150a",
         "P150B-1": "p150b",
         "P150C-1": "p150c",
+        "P300": "p300",
+        "P300A": "p300",
+        "P300C": "p300",
     }
 
     boardname = name_map.get(codename)

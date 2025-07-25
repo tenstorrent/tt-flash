@@ -291,6 +291,9 @@ def flash_chip_stage1(
 
     try:
         image = fw_package.extractfile(f"./{boardname}/image.bin")
+        # extract the whole image
+        image_data = image.read()
+        print(image_data)
     except KeyError:
         # If file is not found then key error is raised
         image = None
@@ -301,6 +304,7 @@ def flash_chip_stage1(
         mask = None
 
     boardname_to_display = change_to_public_name(boardname)
+
     if image is None and mask is None:
         if skip_missing_fw:
             print(
@@ -685,6 +689,12 @@ def flash_chips(
         if boardname is None:
             raise TTError(f"Did not recognize board type for {dev}")
 
+        # For p300 we need to check if its L or R chip
+        if "P300" in boardname:
+            chip_telem = dev.as_bh().get_telemetry()
+            # Check asic location
+            # TODO: when asic location is avail in luwen
+            # APPEND TO BOARDNAME
         to_flash.append(boardname)
 
     print(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
