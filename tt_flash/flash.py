@@ -685,6 +685,14 @@ def flash_chips(
         if boardname is None:
             raise TTError(f"Did not recognize board type for {dev}")
 
+        # For p300 we need to check if its L or R chip
+        if "P300" in boardname:
+            # 0 = Right, 1 = Left
+            if dev.get_asic_location() == 0:
+                boardname = f"{boardname}_right"
+            elif dev.get_asic_location() == 1:
+                boardname = f"{boardname}_left"
+
         to_flash.append(boardname)
 
     print(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")

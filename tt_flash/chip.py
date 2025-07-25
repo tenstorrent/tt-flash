@@ -192,6 +192,15 @@ class TTChip:
         telem = self.get_telemetry_unchanged()
         return self.__vnum_to_version(telem.arc0_fw_version)
 
+    def get_asic_location(self) -> int:
+        """
+        Get the location of the ASIC on the chip for p300
+        0 is L
+        1 is R
+        """
+        telem = self.get_telemetry_unchanged()
+        return telem.asic_location
+
     def board_type(self):
         return self.luwen_chip.pci_board_type()
 
