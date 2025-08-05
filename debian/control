@@ -1,0 +1,33 @@
+Source: tt-flash
+Section: utils
+Priority: optional
+Maintainer: Sam Bansal <sbansal@tenstorrent.com>
+Build-depends:
+ debhelper (>= 10),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3,
+ python3-setuptools,
+ python3-wheel,
+ python3-all,
+ python3-pip
+Standards-Version: 4.5.0
+Homepage: https://github.com/tenstorrent/tt-flash
+Vcs-Git: https://github.com/tenstorrent/tt-flash.git
+Vcs-Browser: https://github.com/tenstorrent/tt-flash
+
+Package: tt-flash
+Architecture: all
+Essential: no
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-pyluwen,
+Description: Tenstorrent Firmware Flash tool
+ # tt-flash
+ .
+ This is a utility to flash firmware blobs to tenstorrent devices.
+ .
+ ## Official Repository
+ [https://github.com/tenstorrent/tt-flash](https://github.com/tenstorrent/tt-flash)
+
