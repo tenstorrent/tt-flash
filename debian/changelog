@@ -1,3 +1,15 @@
+tt-flash (3.4.5) noble; urgency=medium
+
+  [ John 'Warthog9' Hawley ]
+  * Fixing older setuptools again
+  * Workflows - Debian Builds: include changes files in artifacts
+  * Setting minimal python version to 3.10 or newer
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.4.5
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Mon, 15 Sep 2025 19:56:08 +0000
+
 tt-flash (3.4.4) noble; urgency=medium
 
   [ Petra Alexson ]
