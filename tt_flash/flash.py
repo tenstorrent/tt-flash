@@ -24,6 +24,8 @@ from tt_flash.utility import change_to_public_name, get_board_type, CConfig
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
+from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
+from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load
 
 
 def rmw_param(
@@ -648,6 +650,98 @@ def verify_package(fw_package: tarfile.TarFile):
     return Manifest(data=manifest, bundle_version=new_bundle_version)
 
 
+def check_galaxy_eth_link_status(devices):
+    """
+    Check the Galaxy Ethernet link status.
+    Returns True if the link is up, False otherwise.
+    """
+    noc_id = 0
+    DEBUG_BUF_ADDR = 0x12c0 # For eth fw 5.0.0 and above
+    eth_locations_noc_0 = [ (9, 0), (1, 0), (8, 0), (2, 0), (7, 0), (3, 0), (6, 0), (4, 0),
+                        (9, 6), (1, 6), (8, 6), (2, 6), (7, 6), (3, 6), (6, 6), (4, 6) ]
+    LINK_INACTIVE_FAIL_DUMMY_PACKET = 10
+    # Check that we have 32 devices
+    if len(devices) != 32:
+        raise TTError(
+            f"Expected 32 devices for Galaxy Ethernet link status check, seeing {len(devices)}, please try reset again or cold boot the system.",
+        )
+
+    # Collect all the link errors in a dictionary
+    link_errors = {}
+    # Check all 16 eth links for all devices
+    for i, device in enumerate(devices):
+        for eth in range(16):
+            eth_x, eth_y = eth_locations_noc_0[eth]
+            link_error = device.noc_read32(noc_id, eth_x, eth_y, DEBUG_BUF_ADDR + 0x4*96)
+            if link_error == LINK_INACTIVE_FAIL_DUMMY_PACKET:
+                link_errors[i] = eth
+
+    if link_errors:
+        for board_idx, eth in link_errors.items():
+            print(
+                CConfig.COLOR.RED,
+                f"\t\tBoard {board_idx} has link error on eth port {eth}",
+                CConfig.COLOR.ENDC,
+            )
+        raise TTError(
+            "Galaxy Ethernet link errors detected"
+        )
+
+
+def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0", reset_time="0xF"):
+    """
+    Reset the WH asics on the galaxy systems with the following steps:
+    1. Reset the trays with ipmi command
+    2. Wait for 30s
+    3. Reinit all chips
+
+    Args:
+        reinit (bool): Whether to reinitialize the chips after reset.
+        ubb_num (str): The UBB number to reset. 0x0~0xF (bit map)
+        dev_num (str): The device number to reset. 0x0~0xFF(bit map)
+        op_mode (str): The operation mode to use.
+                        0x0 - Asserted/Deassert reset with a reset period (reset_time)
+                        0x1 - Asserted reset
+                        0x2 - Deasserted reset
+        reset_time (str): The reset time to use. resolution 10ms (ex. 0xF => 15 => 150ms)
+    """
+    print(
+        CConfig.COLOR.PURPLE,
+        f"\t\tResetting Galaxy trays with reset command...",
+        CConfig.COLOR.ENDC,
+    )
+    run_wh_ubb_ipmi_reset(ubb_num, dev_num, op_mode, reset_time)
+    live_countdown(30, "Galaxy reset")
+    run_ubb_wait_for_driver_load()
+    print(
+        CConfig.COLOR.PURPLE,
+        f"\t\tRe-initializing boards after reset....",
+        CConfig.COLOR.ENDC,
+    )
+    if not reinit:
+        print(
+            CConfig.COLOR.GREEN,
+            f"\t\tExiting after galaxy reset without re-initializing chips.",
+            CConfig.COLOR.ENDC,
+        )
+        return
+    # eth status 2 has been reused to denote "connected", leading to false hangs when detecting chips
+    # discover local only to fix that
+    chips = detect_chips_with_callback(local_only=True, ignore_ethernet=True)
+    # Check the eth link status for WH Galaxy
+
+    # after re-init check eth status - only if doing a full galaxy reset.
+    # If doing a partial reset, eth connections will be broken because eth training will go out of sync
+    if ubb_num == 0xF:
+        check_wh_galaxy_eth_link_status(chips)
+    # All went well
+    print(
+        CConfig.COLOR.GREEN,
+        f"\t\tRe-initialized {len(chips)} boards after reset.",
+        CConfig.COLOR.ENDC,
+    )
+
+
 def flash_chips(
     sys_config: Optional[dict],
     devices: list[TTChip],
@@ -795,6 +889,13 @@ def flash_chips(
                             for idx in sys_config["wh_link_reset"]["pci_index"]
                             if idx in needs_reset_wh
                         ]
+ 
+                # All chips are on BH Galaxy UBB
+                if set(to_flash) == {"GALAXY-1"}:
+                    glx_6u_trays_reset()
+                    # All BH chips have now been reset
+                    # Don't reset them conventionally
+                    needs_reset_bh = []
 
                 if len(needs_reset_wh) > 0:
                     WHChipReset().full_lds_reset(
