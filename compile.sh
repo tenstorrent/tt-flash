@@ -63,22 +63,23 @@ verify_build() {
 
 # function to rename tt-flash to tt-flash-<version>
 rename_binary() {
-    echo -e "${PURPLE}[INFO] Renaming binary to tt-flash-${VERSION}${NC}"
-    mv dist/tt-flash dist/tt-flash-${VERSION}
+    echo -e "${PURPLE}[INFO] Renaming binary to tt-flash-${DATE}-${VERSION}${NC}"
+    mv dist/tt-flash dist/tt-flash-${DATE}-${VERSION}
 }
 
 # Function to display completion message
 show_completion() {
     echo ""
     echo -e "${PURPLE}[INFO] tt-flash binary is ready for deployment${NC}"
-    echo -e "Binary location: ${PWD}/dist/tt-flash-${VERSION}"
-    echo -e "Binary size: $(du -sh dist/tt-flash-${VERSION} | cut -f1)"
+    echo -e "Binary location: ${PWD}/dist/tt-flash-${DATE}-${VERSION}"
+    echo -e "Binary size: $(du -sh dist/tt-flash-${DATE}-${VERSION} | cut -f1)"
 }
 
 # Main function to orchestrate the compilation process
 main() {
     # Get version from git commit hash
     VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    DATE=$(date +%Y-%m-%d)
     
     echo -e "${PURPLE}[INFO] Initiating tt-flash binary compilation...${NC}"
     echo -e "${PURPLE}[INFO] Version: ${VERSION}${NC}"
