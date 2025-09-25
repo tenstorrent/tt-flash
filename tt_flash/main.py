@@ -19,7 +19,7 @@ from tt_flash.error import TTError
 from tt_flash.utility import CConfig
 from tt_flash.flash import flash_chips
 
-from .chip import detect_local_chips
+from tt_flash.chip import detect_local_chips
 
 # Make version available in --help
 with utility.package_root_path() as path:
