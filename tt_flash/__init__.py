@@ -45,8 +45,8 @@ def __get_package_version() -> str:
             __package_version = toml.loads(pyproject_toml_file.read_text())["project"][
                 "version"
             ]
-            # Indicate it might be locally modified or unreleased.
-            __package_version = __package_version + "+"
+            # Keep version clean for binary compatibility
+            # __package_version = __package_version + "+"
 
     return __package_version
 
