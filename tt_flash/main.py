@@ -185,6 +185,10 @@ def parse_args():
     if args.fwbundle is None and args.fw_tar is None:
         parser.error("one of the following arguments are required: fwbundle or --fw-tar")
 
+    # --fw-tar is deprecated, warn if it's being used
+    if args.fw_tar:
+        print(f"{CConfig.COLOR.YELLOW}Warning: --fw-tar is deprecated, use positional argument instead: tt-flash {args.command} {args.fw_tar}{CConfig.COLOR.ENDC}")
+
     return parser, args
 
 
