@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ctypes
+from dataclasses import dataclass
 
 from tt_flash.boot_fs import tt_boot_fs_fd
 from tt_flash.error import TTError
@@ -9,8 +10,12 @@ from . import boot_fs
 
 from tt_flash.chip import BhChip
 
+@dataclass
+class FlashWrite:
+    offset: int
+    write: bytearray
 
-def writeback_boardcfg(chip: BhChip, write: bytearray) -> bytearray:
+def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrite]:
     # Find boardcfg on chip
     fd_in_spi = boot_fs.read_tag(
         lambda addr, size: chip.spi_read(addr, size), "boardcfg"
@@ -19,27 +24,33 @@ def writeback_boardcfg(chip: BhChip, write: bytearray) -> bytearray:
         raise TTError("Couldn't find boardcfg on chip")
 
     # Find boardcfg in current fd
-    fd_to_flash = boot_fs.read_tag(
-        lambda addr, size: write[addr : addr + size], "boardcfg"
-    )
+    fd_to_flash = None
+    boardcfg_write = None
+    for write in writes:
+        fd_to_flash = boot_fs.read_tag(
+            lambda addr, size: write.write[addr : addr + size], "boardcfg"
+        )
+        if fd_to_flash is not None:
+            boardcfg_write = write
+            break
     if fd_to_flash is None:
         raise TTError("Couldn't find boardcfg in flash package")
     fd_as_data = bytes(fd_in_spi[1])
-    write[fd_to_flash[0] : fd_to_flash[0] + len(fd_as_data)] = fd_as_data
+    boardcfg_write.write[fd_to_flash[0] : fd_to_flash[0] + len(fd_as_data)] = fd_as_data
 
     flashed_fd = boot_fs.read_tag(
-        lambda addr, size: write[addr : addr + size], "boardcfg"
+        lambda addr, size: boardcfg_write.write[addr : addr + size], "boardcfg"
     )
     assert flashed_fd[1] == fd_in_spi[1], f"{flashed_fd[1]} != {fd_in_spi[1]}"
 
-    return write
+    return writes
 
 
 TAG_HANDLERS = {"write-boardcfg": writeback_boardcfg}
 
 
 def boot_fs_write(
-    chip: BhChip, boardname_to_display: str, mask: dict, write: bytearray
+    chip: BhChip, boardname_to_display: str, mask: dict, writes: list[FlashWrite]
 ) -> bytearray:
     param_handlers = []
     for v in mask:
@@ -65,6 +76,6 @@ def boot_fs_write(
                 )
 
     for handler in param_handlers:
-        write = handler(chip, write)
+        writes = handler(chip, writes)
 
-    return write
+    return writes
