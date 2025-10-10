@@ -275,10 +275,6 @@ def main():
             devices = detect_local_chips(ignore_ethernet=True)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
-            if version[0] > 1:
-                raise TTError(
-                    f"Unsupported version ({'.'.join(map(str, version))}) this flash program only supports flashing pre 2.0 packages"
-                )
 
             return flash_chips(
                 config,
@@ -286,6 +282,7 @@ def main():
                 tar,
                 args.force,
                 args.no_reset,
+                version,
                 skip_missing_fw=args.skip_missing_fw,
             )
         else:
