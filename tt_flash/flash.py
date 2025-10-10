@@ -612,8 +612,12 @@ class Manifest:
     data: dict
     bundle_version: tuple[int, int, int, int]
 
+# Mapping of validation functions for each bundle version
+BUNDLE_VALIDATION_FUNCS = {
+    (2, 0, 0): lambda bundle_version: bundle_version[0] >= 19, # Ensure major release is 19 or newer
+}
 
-def verify_package(fw_package: tarfile.TarFile):
+def verify_package(fw_package: tarfile.TarFile, version: tuple[int, int, int]):
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
         if CConfig.is_tty():
@@ -632,6 +636,17 @@ def verify_package(fw_package: tarfile.TarFile):
         manifest_bundle_version.get("patch", 0),
         manifest_bundle_version.get("debug", 0),
     )
+
+    # Note- we only validate versions >= 2.0.0, for backwards compatibility with 1.x.x
+    if version[0] != 1:
+        if version not in BUNDLE_VALIDATION_FUNCS:
+            raise TTError(
+                f"Unsupported manifest version ({'.'.join(map(str, version))}). Please update tt-flash to the latest version."
+            )
+        elif not BUNDLE_VALIDATION_FUNCS[version](new_bundle_version):
+            raise TTError(
+                f"Bundle version {new_bundle_version} does not meet the requirements for version {'.'.join(map(str, version))}"
+            )
 
     global __SEMANTIC_BUNDLE_VERSION
     __SEMANTIC_BUNDLE_VERSION = list(new_bundle_version)
@@ -737,14 +752,15 @@ def flash_chips(
     fw_package: tarfile.TarFile,
     force: bool,
     no_reset: bool,
+    version: tuple[int, int, int],
     skip_missing_fw: bool = False,
 ):
     print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
     if CConfig.is_tty():
-        print("\t\tVerifying fw-package can be flashed", end="", flush=True)
+        print("\t\tVerifying fw-package can be flashed ", end="", flush=True)
     else:
         print("\t\tVerifying fw-package can be flashed")
-    manifest = verify_package(fw_package)
+    manifest = verify_package(fw_package, version)
 
     if CConfig.is_tty():
         print(
@@ -878,7 +894,7 @@ def flash_chips(
                             for idx in sys_config["wh_link_reset"]["pci_index"]
                             if idx in needs_reset_wh
                         ]
- 
+
                 # All chips are on BH Galaxy UBB
                 if set(to_flash) == {"GALAXY-1"}:
                     glx_6u_trays_reset()
