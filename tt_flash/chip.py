@@ -276,6 +276,25 @@ class BhChip(TTChip):
             allow_exception=True, exception=exception, running=running, spi=spi
         )
 
+    def get_asic_location(self) -> int:
+        """
+        Get the location of the ASIC on the chip for p300
+        0 is L
+        1 is R
+        """
+        # Records state of GPIO inputs [0:31] at boot time
+        GPIO_STRAP_REG_L = 0x80030D20
+        try:
+            location = super().get_asic_location()
+        except Exception:
+            print(f"\rWarning: Unable to retrieve telemetry, reading ASIC location "
+                "via fallback\n", end="", flush=True)
+            gpio_strap = self.luwen_chip.axi_read32(GPIO_STRAP_REG_L)
+            # If GPIO6 is high, we are on the left ASIC
+            location = (gpio_strap >> 6) & 0x1
+
+        return location
+
 
 class WhChip(TTChip):
     def min_fw_version(self):
