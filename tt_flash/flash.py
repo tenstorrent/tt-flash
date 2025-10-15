@@ -181,6 +181,7 @@ def flash_chip_stage1(
     manifest: Manifest,
     fw_package: tarfile.TarFile,
     force: bool,
+    allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
 ) -> FlashStageResult:
     """
@@ -238,14 +239,32 @@ def flash_chip_stage1(
         print(f"\t\t\tNow flashing tt-flash version: {manifest.bundle_version}")
     else:
         component = fw_bundle_version.running[0]
-        if component != manifest.bundle_version[0]:
+        if component > manifest.bundle_version[0]:
+            if allow_major_downgrades:
+                print(
+                    f"\t\t\tDetected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, "
+                    "but major downgrades are allowed so we are proceeding"
+                )
+            else:
+                raise TTError(
+                    f"Detected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, this is not supported. "
+                    "If you really want to do this please re-run with --allow-major-downgrades"
+                )
+        if component == manifest.bundle_version[0] - 1:
+            # Permit updates across only one major version boundary
+            print(
+                f"\t\t\t{CConfig.COLOR.YELLOW}Detected major version upgrade from "
+                f"{fw_bundle_version.running} to {manifest.bundle_version}{CConfig.COLOR.ENDC}"
+            )
+        elif component != manifest.bundle_version[0]:
             if force:
                 print(
                     f"\t\t\tFound unexpected bundle version ('{component}'), however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
-                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running}"
+                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running} "
+                    "bypass with --force"
                 )
 
         print(
@@ -753,6 +772,7 @@ def flash_chips(
     force: bool,
     no_reset: bool,
     version: tuple[int, int, int],
+    allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
 ):
     print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
@@ -810,6 +830,7 @@ def flash_chips(
             manifest,
             fw_package,
             force,
+            allow_major_downgrades,
             skip_missing_fw=skip_missing_fw,
         )
 
