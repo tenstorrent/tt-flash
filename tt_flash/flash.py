@@ -846,6 +846,15 @@ def flash_chips(
     if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
 
+        m3_delay = 20 # M3 takes 20 seconds to boot and be ready after a reset
+        running_version = chip.get_bundle_version().running
+        if (running_version is None) or (running_version[0] != manifest.bundle_version[0]):
+            # We crossed a major version boundary, give a longer boot timeout
+            print(
+                "\t\tDetected update across major version, will wait 60 seconds for m3 to boot after reset"
+            )
+            m3_delay = 60
+
         if no_reset:
             if rc != 0:
                 print(
@@ -909,7 +918,8 @@ def flash_chips(
 
                 if len(needs_reset_bh) > 0:
                     BHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset_bh, reset_m3=True
+                        pci_interfaces=needs_reset_bh, reset_m3=True,
+                        m3_delay=m3_delay
                     )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
