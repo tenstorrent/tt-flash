@@ -1,3 +1,31 @@
+tt-flash (3.4.7) noble; urgency=medium
+
+  [ Daniel DeGrasse ]
+  * support partial writes when address offsets are provided in image binary
+
+  [ Petra Alexson ]
+  * Add more ways of providing fwbundle file as an arg
+  * Warn if deprecated --fw-tar arg is used
+
+  [ Jonathan Baker ]
+  * Updated to automatic community labeling v2
+
+  [ Petra Alexson ]
+  * Update README.md
+
+  [ Daniel DeGrasse ]
+  * support manifest versions up to 2.0.0, add validation code for 2.0.0
+  * fallback to GPIO strap detection for left/right chip on blackhole
+  * delay additional time during resets if updating across major versions
+  * prevent downgrades across major version
+  * confirm blackhole flash is valid using ARC message
+  * updated pyproject requirements to pull in new tools
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.4.7
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 17 Oct 2025 20:22:29 +0000
+
 tt-flash (3.4.6) noble; urgency=medium
 
   [ Petra Alexson ]
