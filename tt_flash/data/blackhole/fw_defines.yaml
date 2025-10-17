@@ -3,3 +3,4 @@
 
 MSG_TYPE_ARC_STATE0:                      0xa0
 MSG_TYPE_ARC_STATE3:                      0xa3
+MSG_CONFIRM_FLASHED_SPI:                  0xc4

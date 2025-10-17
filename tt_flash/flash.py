@@ -14,6 +14,7 @@ import tarfile
 import time
 from typing import Callable, Optional, Union
 import sys
+import random
 
 import tt_flash
 from tt_flash.blackhole import boot_fs_write
@@ -181,6 +182,7 @@ def flash_chip_stage1(
     manifest: Manifest,
     fw_package: tarfile.TarFile,
     force: bool,
+    allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
 ) -> FlashStageResult:
     """
@@ -238,14 +240,32 @@ def flash_chip_stage1(
         print(f"\t\t\tNow flashing tt-flash version: {manifest.bundle_version}")
     else:
         component = fw_bundle_version.running[0]
-        if component != manifest.bundle_version[0]:
+        if component > manifest.bundle_version[0]:
+            if allow_major_downgrades:
+                print(
+                    f"\t\t\tDetected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, "
+                    "but major downgrades are allowed so we are proceeding"
+                )
+            else:
+                raise TTError(
+                    f"Detected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, this is not supported. "
+                    "If you really want to do this please re-run with --allow-major-downgrades"
+                )
+        if component == manifest.bundle_version[0] - 1:
+            # Permit updates across only one major version boundary
+            print(
+                f"\t\t\t{CConfig.COLOR.YELLOW}Detected major version upgrade from "
+                f"{fw_bundle_version.running} to {manifest.bundle_version}{CConfig.COLOR.ENDC}"
+            )
+        elif component != manifest.bundle_version[0]:
             if force:
                 print(
                     f"\t\t\tFound unexpected bundle version ('{component}'), however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
-                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running}"
+                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running} "
+                    "bypass with --force"
                 )
 
         print(
@@ -753,6 +773,7 @@ def flash_chips(
     force: bool,
     no_reset: bool,
     version: tuple[int, int, int],
+    allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
 ):
     print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
@@ -810,6 +831,7 @@ def flash_chips(
             manifest,
             fw_package,
             force,
+            allow_major_downgrades,
             skip_missing_fw=skip_missing_fw,
         )
 
@@ -845,6 +867,15 @@ def flash_chips(
 
     if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
+
+        m3_delay = 20 # M3 takes 20 seconds to boot and be ready after a reset
+        running_version = chip.get_bundle_version().running
+        if (running_version is None) or (running_version[0] != manifest.bundle_version[0]):
+            # We crossed a major version boundary, give a longer boot timeout
+            print(
+                "\t\tDetected update across major version, will wait 60 seconds for m3 to boot after reset"
+            )
+            m3_delay = 60
 
         if no_reset:
             if rc != 0:
@@ -909,11 +940,24 @@ def flash_chips(
 
                 if len(needs_reset_bh) > 0:
                     BHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset_bh, reset_m3=True
+                        pci_interfaces=needs_reset_bh, reset_m3=True,
+                        m3_delay=m3_delay
                     )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
-                    detect_chips()
+                    devices = detect_chips()
+
+    for idx, chip in enumerate(devices):
+        if manifest.bundle_version[0] >= 19 and isinstance(chip, BhChip):
+            # Get a random number to send back as arg0
+            check_val = random.randint(1, 0xFFFF)
+            try:
+                response = chip.arc_msg(chip.fw_defines["MSG_CONFIRM_FLASHED_SPI"], arg0=check_val)
+            except BaseException:
+                response = [0]
+            if (response[0] & 0xFFFF) != check_val:
+                print(f"{CConfig.COLOR.YELLOW}WARNING:{CConfig.COLOR.ENDC} Post flash check failed for chip {idx}")
+                print("Try resetting the board to ensure the new firmware is loaded correctly.")
 
     if rc == 0:
         print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")

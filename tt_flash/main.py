@@ -143,6 +143,9 @@ def parse_args():
         action="store_true",
         required=False,
     )
+    flash.add_argument(
+        "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
+    )
 
     cmd_args = sys.argv.copy()[1:]
 
@@ -283,6 +286,7 @@ def main():
                 args.force,
                 args.no_reset,
                 version,
+                args.allow_major_downgrades,
                 skip_missing_fw=args.skip_missing_fw,
             )
         else:
