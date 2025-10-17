@@ -14,6 +14,7 @@ import tarfile
 import time
 from typing import Callable, Optional, Union
 import sys
+import random
 
 import tt_flash
 from tt_flash.blackhole import boot_fs_write
@@ -944,7 +945,19 @@ def flash_chips(
                     )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
-                    detect_chips()
+                    devices = detect_chips()
+
+    for idx, chip in enumerate(devices):
+        if manifest.bundle_version[0] >= 19 and isinstance(chip, BhChip):
+            # Get a random number to send back as arg0
+            check_val = random.randint(1, 0xFFFF)
+            try:
+                response = chip.arc_msg(chip.fw_defines["MSG_CONFIRM_FLASHED_SPI"], arg0=check_val)
+            except BaseException:
+                response = [0]
+            if (response[0] & 0xFFFF) != check_val:
+                print(f"{CConfig.COLOR.YELLOW}WARNING:{CConfig.COLOR.ENDC} Post flash check failed for chip {idx}")
+                print("Try resetting the board to ensure the new firmware is loaded correctly.")
 
     if rc == 0:
         print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
