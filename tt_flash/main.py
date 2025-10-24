@@ -67,12 +67,6 @@ def parse_args():
         version=VERSION_STR,
     )
     parser.add_argument(
-        "--sys-config",
-        help="Path to the pre generated sys-config json",
-        default=None,
-        type=Path,
-    )
-    parser.add_argument(
         "--no-color",
         help="Disable the colorful output",
         default=False,
@@ -88,12 +82,6 @@ def parse_args():
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
     flash = subparsers.add_parser("flash", help="Flash firmware to Tenstorrent devices on the system. Run tt-flash flash -h for further command-specific help.")
-    flash.add_argument(
-        "--sys-config",
-        help="Path to the pre generated sys-config json",
-        default=None,
-        type=Path,
-    )
     flash.add_argument(
         "fwbundle",
         nargs="?",
@@ -127,12 +115,6 @@ def parse_args():
         "fwbundle",
         nargs="?",
         help="Path to the firmware bundle",
-        type=Path,
-    )
-    config_group.add_argument(
-        "--sys-config",
-        help="Path to the pre generated sys-config json",
-        default=None,
         type=Path,
     )
     config_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
@@ -194,42 +176,6 @@ def parse_args():
 
     return parser, args
 
-
-def load_sys_config(path: Optional[Path]) -> Optional[dict]:
-    if path is None:
-        # Do a search for a default config
-        print("\tSearching for default sys-config path")
-        global_path = Path("/etc/tenstorrent/config.json")
-        if global_path.exists():
-            print(f"\tLoaded config from {global_path}")
-            return json.load(global_path.open())
-        else:
-            print(
-                f"\tChecking {global_path}: {CConfig.COLOR.YELLOW}not found{CConfig.COLOR.ENDC}"
-            )
-
-        local_path = Path("~/.config/tenstorrent/config.json")
-        if local_path.exists():
-            print(f"\tLoaded config from {local_path}")
-            return json.load(local_path.open())
-        else:
-            print(
-                f"\tChecking {local_path}: {CConfig.COLOR.YELLOW}not found{CConfig.COLOR.ENDC}"
-            )
-
-        print(
-            "\n\tCould not find config in default search locations, if you need it, either pass it in explicitly or generate one"
-        )
-        print(
-            f"\t{CConfig.COLOR.YELLOW}Warning: continuing without sys-config, galaxy systems will not be reset{CConfig.COLOR.ENDC}"
-        )
-
-        return None
-    else:
-        print(f"Loaded config from {path}")
-        return json.load(open(path))
-
-
 def load_manifest(path: str):
     tar = tarfile.open(path, "r")
 
@@ -272,15 +218,12 @@ def main():
                 parser.print_help()
                 sys.exit(1)
 
-            config = load_sys_config(args.sys_config)
-
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
             devices = detect_local_chips(ignore_ethernet=True)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
             return flash_chips(
-                config,
                 devices,
                 tar,
                 args.force,
