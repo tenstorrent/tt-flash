@@ -124,6 +124,21 @@ def bundle_version(
     return data
 
 
+def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
+    """
+    Old FW bundles used to start with 80 and the version format was 80.major.minor.patch.
+    FW version switched over at major version 18 from 80.18.X.X -> 18.X.X.
+    
+    If version[0] == 80, return (major, minor, patch, 0).
+    Otherwise, just return the version.
+    """
+    if version is None:
+        return None
+    if version[0] == 80:
+        return (version[1], version[2], version[3], 0)
+    return version
+
+
 TAG_HANDLERS: dict[str, Callable[[TTChip, bytearray, int, int, int], bytearray]] = {
     "rmw": rmw_param,
     "incr": incr_param,
@@ -206,6 +221,11 @@ def flash_chip_stage1(
         pass
 
     fw_bundle_version = chip.get_bundle_version()
+    
+    # If FW version is formatted like (80, major, minor, patch) reformat it to (major, minor, patch, 0)
+    spi_version = normalize_fw_version(fw_bundle_version.spi)
+    running_version = normalize_fw_version(fw_bundle_version.running)
+    manifest_version = normalize_fw_version(manifest.bundle_version)
 
     if fw_bundle_version.exception is not None:
         if fw_bundle_version.allow_exception:
@@ -225,6 +245,7 @@ def flash_chip_stage1(
                 f"Hit error {fw_bundle_version.exception} while trying to determine running firmware."
             )
 
+
     bundle_version = None
     if fw_bundle_version.running is None:
         # Certain old fw versions won't have the running_bundle_version populated.
@@ -239,8 +260,7 @@ def flash_chip_stage1(
             )
         print(f"\t\t\tNow flashing tt-flash version: {manifest.bundle_version}")
     else:
-        component = fw_bundle_version.running[0]
-        if component > manifest.bundle_version[0]:
+        if running_version[0] > manifest_version[0]:
             if allow_major_downgrades:
                 print(
                     f"\t\t\tDetected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, "
@@ -251,20 +271,20 @@ def flash_chip_stage1(
                     f"Detected major version downgrade from {fw_bundle_version.running} to {manifest.bundle_version}, this is not supported. "
                     "If you really want to do this please re-run with --allow-major-downgrades"
                 )
-        if component == manifest.bundle_version[0] - 1:
+        if running_version[0] == manifest_version[0] - 1:
             # Permit updates across only one major version boundary
             print(
                 f"\t\t\t{CConfig.COLOR.YELLOW}Detected major version upgrade from "
                 f"{fw_bundle_version.running} to {manifest.bundle_version}{CConfig.COLOR.ENDC}"
             )
-        elif component != manifest.bundle_version[0]:
+        elif running_version[0] != manifest_version[0]:
             if force:
                 print(
-                    f"\t\t\tFound unexpected bundle version ('{component}'), however you ran with force so we are barreling onwards"
+                    f"\t\t\tFound unexpected bundle version ('{running_version[0]}'), however you ran with force so we are barreling onwards"
                 )
             else:
                 raise TTError(
-                    f"Bundle fwId ({manifest.bundle_version[0]}) does not match expected fwId ({component}); {manifest.bundle_version} != {fw_bundle_version.running} "
+                    f"Bundle fwId ({manifest_version[0]}) does not match expected fwId ({running_version[0]}); {manifest.bundle_version} != {fw_bundle_version.running} "
                     "bypass with --force"
                 )
 
@@ -277,13 +297,14 @@ def flash_chip_stage1(
         detected_version = False
         print("\t\t\tForced ROM update requested. ROM will now be updated.")
     # Best check is for if we have already flashed the desired fw (or newer fw) to spi
+
     elif fw_bundle_version.spi is not None:
-        if fw_bundle_version.spi >= manifest.bundle_version:
+        if spi_version >= manifest_version:
             # Now that we know if the SPI is newer we should check to see if the problem is that we have flashed the correct FW, but are running something too old
             if fw_bundle_version.running is not None:
-                if fw_bundle_version.running >= manifest.bundle_version:
+                if running_version >= manifest_version:
                     print("\t\t\tROM does not need to be updated.")
-                if fw_bundle_version.running < manifest.bundle_version:
+                if running_version < manifest_version:
                     print(
                         "\t\t\tROM does not need to be updated, while the chip is running old FW the SPI is up to date. You can load the new firmware after a reboot, or in the case of WH a reset. Or skip this check with --force."
                     )
@@ -297,7 +318,7 @@ def flash_chip_stage1(
             )
     # We did not see any spi versions returned... just go by running
     elif fw_bundle_version.running is not None:
-        if fw_bundle_version.running >= manifest.bundle_version:
+        if running_version >= manifest_version:
             print("\t\t\tROM does not need to be updated.")
             return FlashStageResult(
                 state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
