@@ -204,21 +204,6 @@ class TTChip:
     def board_type(self):
         return self.luwen_chip.pci_board_type()
 
-    def axi_write32(self, addr: int, value: int):
-        self.luwen_chip.axi_write32(addr, value)
-
-    def axi_write(self, addr: int, data: bytes):
-        self.luwen_chip.axi_write(addr, data)
-
-    def axi_read32(self, addr: int) -> int:
-        return self.luwen_chip.axi_read32(addr)
-
-    def axi_read(self, addr: int, size: int) -> bytes:
-        data = bytearray(size)
-        self.luwen_chip.axi_read(addr, data)
-
-        return bytes(data)
-
     def spi_write(self, addr: int, data: bytes):
         self.luwen_chip.spi_write(addr, data)
 
