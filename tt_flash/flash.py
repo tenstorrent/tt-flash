@@ -775,6 +775,7 @@ def flash_chips(
     version: tuple[int, int, int],
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
+    use_umd: bool = False,
 ):
     print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
     if CConfig.is_tty():
@@ -945,7 +946,7 @@ def flash_chips(
                     )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
-                    devices = detect_chips()
+                    devices = detect_chips(use_umd=use_umd)
 
     for idx, chip in enumerate(devices):
         if manifest.bundle_version[0] >= 19 and isinstance(chip, BhChip):

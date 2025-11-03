@@ -305,6 +305,7 @@ class GsChip(TTChip):
 
 def detect_local_chips(
     ignore_ethernet: bool = False,
+    use_umd: bool = False,
 ) -> list[Union[GsChip, WhChip, BhChip]]:
     """
     This will create a chip which only gaurentees that you have communication with the chip.
@@ -374,7 +375,7 @@ def detect_local_chips(
     return output
 
 
-def detect_chips(local_only: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
+def detect_chips(local_only: bool = False, use_umd: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
     output = []
     for device in luwen_detect_chips(local_only=local_only):
         if device.as_gs() is not None:

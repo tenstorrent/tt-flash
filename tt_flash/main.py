@@ -84,6 +84,12 @@ def parse_args():
         default=False,
         action="store_true",
     )
+    parser.add_argument(
+        "--use_umd",
+        default=False,
+        action="store_true",
+        help="Use UMD instead of Luwen driver.",
+    )
 
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
@@ -275,7 +281,7 @@ def main():
             config = load_sys_config(args.sys_config)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
-            devices = detect_local_chips(ignore_ethernet=True)
+            devices = detect_local_chips(ignore_ethernet=True, use_umd=args.use_umd)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
@@ -288,6 +294,7 @@ def main():
                 version,
                 args.allow_major_downgrades,
                 skip_missing_fw=args.skip_missing_fw,
+                use_umd=args.use_umd,
             )
         else:
             raise TTError(f"No handler for command {args.command}.")

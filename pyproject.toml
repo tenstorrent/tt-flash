@@ -24,6 +24,8 @@ dependencies = [
   "pyyaml == 6.0.2",
   'tt_tools_common == 1.4.31',
   "pyluwen == 0.7.12",
+  # NOTE: To be changed before merged to main.
+  'tt_umd @ git+https://github.com/tenstorrent/tt-umd.git@brosko/more_py_api2',
   "tabulate == 0.9.0",
   "tomli == 2.0.1; python_version < '3.11'",
 
