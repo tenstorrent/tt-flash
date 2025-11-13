@@ -21,7 +21,12 @@ from tt_flash.blackhole import boot_fs_write
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
 from tt_flash.error import TTError
-from tt_flash.utility import change_to_public_name, get_board_type, CConfig
+from tt_flash.utility import (
+    change_to_public_name,
+    get_board_type,
+    CConfig,
+    live_countdown
+)
 
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
@@ -147,28 +152,6 @@ TAG_HANDLERS: dict[str, Callable[[TTChip, bytearray, int, int, int], bytearray]]
     "bundle_version": bundle_version,
 }
 
-
-def live_countdown(wait_time: float, name: str, print_initial: bool = True):
-    if print_initial:
-        print(f"{name} started, will wait {wait_time} seconds for it to complete")
-
-    # If True then we are running in an interactive environment
-    if CConfig.is_tty():
-        start = time.time()
-        elapsed = time.time() - start
-        while elapsed < wait_time:
-            print(
-                f"\r\033[K{name} ongoing, waiting {wait_time - elapsed:.1f} more seconds for it to complete",
-                end="",
-                flush=True,
-            )
-
-            time.sleep(0.1)
-            elapsed = time.time() - start
-        print(f"\r\033[K{name} completed", flush=True)
-    else:
-        time.sleep(wait_time)
-        print(f"{name} completed")
 
 @dataclass
 class FlashData:
