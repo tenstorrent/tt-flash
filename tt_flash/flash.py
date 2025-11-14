@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from base64 import b16decode
-from datetime import date
 from enum import Enum, auto
 import json
 import requests
@@ -17,7 +15,7 @@ import sys
 import random
 
 import tt_flash
-from tt_flash.blackhole import boot_fs_write
+from tt_flash.blackhole import build_flash_writes_bh
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
 from tt_flash.error import TTError
@@ -25,8 +23,9 @@ from tt_flash.utility import (
     change_to_public_name,
     get_board_type,
     CConfig,
-    live_countdown
+    live_countdown,
 )
+from tt_flash.wormhole import build_flash_writes_wh, set_semantic_bundle_version
 
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
@@ -34,125 +33,15 @@ from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load
 
-M3_DELAY_NORMAL=20 # M3 takes 20s to boot and be ready after a reset
-M3_DELAY_MAJOR_UPGRADE=60 # When crossing major upgrade boundaries, it could take up to 60s
+M3_DELAY_NORMAL = 20  # M3 takes 20s to boot and be ready after a reset
+M3_DELAY_MAJOR_UPGRADE = (
+    60  # When crossing major upgrade boundaries, it could take up to 60s
+)
 
-
-def rmw_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    # Read the existing data
-    existing_data = chip.spi_read(spi_addr, len)
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = existing_data
-
-    return data
-
-
-def incr_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    # Read the existing data
-    existing_data = chip.spi_read(spi_addr, len)
-
-    try:
-        data_bytes = (int.from_bytes(existing_data, "little") + 1).to_bytes(
-            len, "little"
-        )
-    except OverflowError:
-        # If we overflow, just set it to 0
-        data_bytes = (1).to_bytes(len, "little")
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = data_bytes
-
-    return data
-
-
-def date_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    today = date.today()
-    int_date = int(f"0x{today.strftime('%Y%m%d')}", 16)  # Date in 0xYYYYMMDD
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = int_date.to_bytes(len, "little")
-
-    return data
-
-
-def flash_version(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    version = tt_flash.__version__
-
-    version_parts = version.split(".")
-    for _ in range(version_parts.__len__(), 4):
-        version_parts.insert(0, "0")
-    version_parts = version_parts[:4]
-
-    version = [
-        int(version_parts[3]),
-        int(version_parts[2]),
-        int(version_parts[1]),
-        int(version_parts[0]),
-    ]
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = bytes(version)
-
-    return data
-
-
-# HACK(drosen): I don't want to update the callback function just to implement the bundle version
-# but it is only set once so it's not too bad to just set it as a global.
-__SEMANTIC_BUNDLE_VERSION = [0xFF, 0xFF, 0xFF, 0xFF]
-
-
-def bundle_version(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    global __SEMANTIC_BUNDLE_VERSION
-
-    for _ in range(__SEMANTIC_BUNDLE_VERSION.__len__(), 4):
-        __SEMANTIC_BUNDLE_VERSION.append(0)
-    version_parts = __SEMANTIC_BUNDLE_VERSION[:4]
-
-    version = [
-        int(version_parts[3]),
-        int(version_parts[2]),
-        int(version_parts[1]),
-        int(version_parts[0]),
-    ]
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = bytes(version)
-
-    return data
-
-
-def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
-    """
-    Old FW bundles used to start with 80 and the version format was 80.major.minor.patch.
-    FW version switched over at major version 18 from 80.18.X.X -> 18.X.X.
-    
-    If version[0] == 80, return (major, minor, patch, 0).
-    Otherwise, just return the version.
-    """
-    if version is None:
-        return None
-    if version[0] == 80:
-        return (version[1], version[2], version[3], 0)
-    return version
-
-
-TAG_HANDLERS: dict[str, Callable[[TTChip, bytearray, int, int, int], bytearray]] = {
-    "rmw": rmw_param,
-    "incr": incr_param,
-    "date": date_param,
-    "flash_version": flash_version,
-    "bundle_version": bundle_version,
+# Mapping of validation functions for each bundle version
+BUNDLE_VALIDATION_FUNCS = {
+    (2, 0, 0): lambda bundle_version: bundle_version[0]
+    >= 19,  # Ensure major release is 19 or newer
 }
 
 
@@ -177,11 +66,29 @@ class FlashStageResult:
     data: Optional[FlashData]
 
 
+@dataclass
+class Manifest:
+    data: dict
+    bundle_version: tuple[int, int, int, int]
+
+
+def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
+    """
+    Old FW bundles used to start with 80 and the version format was 80.major.minor.patch.
+    FW version switched over at major version 18 from 80.18.X.X -> 18.X.X.
+    
+    If version[0] == 80, return (major, minor, patch, 0).
+    Otherwise, just return the version.
+    """
+    if version is None:
+        return None
+    if version[0] == 80:
+        return (version[1], version[2], version[3], 0)
+    return version
+
+
 def check_fw_version_compatability(
-    chip: TTChip,
-    manifest: Manifest,
-    force: bool,
-    allow_major_downgrades: bool
+    chip: TTChip, manifest: Manifest, force: bool, allow_major_downgrades: bool
 ) -> tuple[bool, str]:
     """
     This function is used in Flash Stage 1 to perform the following:
@@ -217,7 +124,9 @@ def check_fw_version_compatability(
             )
         else:
             # BH must always successfully be able to return a fw_version
-            raise TTError(f"Hit error {fw_bundle_version.exception} while trying to determine running firmware.")
+            raise TTError(
+                f"Hit error {fw_bundle_version.exception} while trying to determine running firmware."
+            )
 
     # 2. Check major version compatability
     # TODO: Why do we check running version and not SPI version here?
@@ -229,7 +138,9 @@ def check_fw_version_compatability(
                 "Looks like you are running a very old set of fw, it's safe to assume that it needs an update "
                 "but please update it using --force"
             )
-        print("\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update.")
+        print(
+            "\t\t\tLooks like you are running a very old set of fw, assuming that it needs an update."
+        )
     else:
         running_major = running_version[0]
         manifest_major = manifest_version[0]
@@ -265,22 +176,27 @@ def check_fw_version_compatability(
     # 3. Verify that manifest_version is an upgrade, or continue using force.
     if force:
         print("\t\t\tForced ROM update requested.")
-    elif spi_version is not None: # The best way to check current FW version is SPI
+    elif spi_version is not None: 
+        # The best way to check current FW version is SPI
         if spi_version >= manifest_version:
             # SPI already has desired version or newer, check for running_version mismatch
             if running_version is not None and running_version >= manifest_version:
                 return (False, "ROM does not need to be updated.")
             elif running_version is not None:
-                return (False,
+                return (
+                    False,
                     "ROM does not need to be updated, while the chip is running old FW the SPI is up to date. "
                     "You can load the new firmware after a reset. Or skip this check with --force.",
                 )
             else:
-                return (False,
+                return (
+                    False,
                     "ROM does not need to be updated, cannot detect the running FW version but the SPI is ahead of the firmware you are attempting to flash. "
                     "You can load the newer firmware after a reset. Or skip this check with --force.",
                 )
-    elif running_version is not None: # The second best way to check current FW version is running_version
+    elif (
+        running_version is not None
+    ):  # The second best way to check current FW version is running_version
         if running_version >= manifest_version:
             return (False, "ROM does not need to be updated.")
     else:
@@ -291,6 +207,7 @@ def check_fw_version_compatability(
     print("\t\t\tROM will now be updated.")
 
     return (True, "")
+
 
 def flash_chip_stage1(
     chip: TTChip,
@@ -322,10 +239,14 @@ def flash_chip_stage1(
         pass
 
     # Check if we can flash based on current version and version to flash
-    should_flash, reason_message = check_fw_version_compatability(chip, manifest, force, allow_major_downgrades)
+    should_flash, reason_message = check_fw_version_compatability(
+        chip, manifest, force, allow_major_downgrades
+    )
     if not should_flash:
         print("\t\t\t" + reason_message)
-        return FlashStageResult(state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False)
+        return FlashStageResult(
+            state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+        )
 
     try:
         image = fw_package.extractfile(f"./{boardname}/image.bin")
@@ -367,90 +288,21 @@ def flash_chip_stage1(
     image = image.read()
 
     if isinstance(chip, BhChip):
-        writes = []
-
-        curr_addr = 0
-        for line in image.decode("utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("@"):
-                curr_addr = int(line.lstrip("@").strip())
-            else:
-                data = b16decode(line)
-                curr_stop = curr_addr + len(data)
-                if not isinstance(data, bytearray):
-                    data = bytearray(data)
-                writes.append(FlashWrite(curr_addr, data))
-
-                curr_addr = curr_stop
-
-        writes.sort(key=lambda x: x.offset)
-
-        writes = boot_fs_write(chip, boardname_to_display, mask, writes)
+        writes = build_flash_writes_bh(chip, image, mask, boardname_to_display)
+    elif isinstance(chip, WhChip):
+        writes = build_flash_writes_wh(chip, image, mask, boardname_to_display)
     else:
-        # I expected to see a list of dicts, with the keys
-        # "start", "end", "tag"
-        param_handlers = []
-        for v in mask:
-            start = v.get("start", None)
-            end = v.get("end", None)
-            tag = v.get("tag", None)
+        if skip_missing_fw:
+            print(
+                f"\t\t\t{CConfig.COLOR.YELLOW}Skipping flash: Chip type not supported by TT-Flash.{CConfig.COLOR.ENDC}"
+            )
+            return FlashStageResult(
+                state=FlashStageResultState.NoFlash, data=None, msg="", can_reset=False
+            )
+        else:
+            raise TTError(f"Chip type not supported by TT-Flash")
 
-            if (
-                (start is None or not isinstance(start, int))
-                or (end is None or not isinstance(end, int))
-                or (tag is None or not isinstance(tag, str))
-            ):
-                raise TTError(
-                    f"Invalid mask format for {boardname_to_display}; expected to see a list of dicts with keys 'start', 'end', 'tag'"
-                )
-
-            if tag in TAG_HANDLERS:
-                param_handlers.append(((start, end), TAG_HANDLERS[tag]))
-            else:
-                if len(TAG_HANDLERS) > 0:
-                    pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
-                    pretty_tags[-1] = f"or {pretty_tags[-1]}"
-                    raise TTError(
-                        f"Invalid tag {tag} for {boardname_to_display}; expected to see one of {pretty_tags}"
-                    )
-                else:
-                    raise TTError(
-                        f"Invalid tag {tag} for {boardname_to_display}; there aren't any tags defined!"
-                    )
-        writes = []
-
-        curr_addr = 0
-        for line in image.decode("utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("@"):
-                curr_addr = int(line.lstrip("@").strip())
-            else:
-                data = b16decode(line)
-
-                curr_stop = curr_addr + len(data)
-
-                for (start, end), handler in param_handlers:
-                    if start < curr_stop and end > curr_addr:
-                        # chip, data, spi_addr, data_addr, len
-                        if not isinstance(data, bytearray):
-                            data = bytearray(data)
-                        data = handler(
-                            chip, data, start, start - curr_addr, end - start
-                        )
-                    elif start >= curr_addr and start < curr_stop and end >= curr_stop:
-                        raise TTError(
-                            f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname_to_display}! This is not supported."
-                        )
-
-                if not isinstance(data, bytes):
-                    data = bytes(data)
-                writes.append(FlashWrite(curr_addr, data))
-
-                curr_addr = curr_stop
-
-        writes.sort(key=lambda x: x.offset)
-
-
+    # Determine if board can be reset after flashing
     if boardname in ["NEBULA_X1", "NEBULA_X2"]:
         print(
             "\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible"
@@ -643,16 +495,6 @@ def flash_chip_stage2(
     return trigged_copy
 
 
-@dataclass
-class Manifest:
-    data: dict
-    bundle_version: tuple[int, int, int, int]
-
-# Mapping of validation functions for each bundle version
-BUNDLE_VALIDATION_FUNCS = {
-    (2, 0, 0): lambda bundle_version: bundle_version[0] >= 19, # Ensure major release is 19 or newer
-}
-
 def verify_package(fw_package: tarfile.TarFile, version: tuple[int, int, int]):
     manifest_data = fw_package.extractfile("./manifest.json")
     if manifest_data is None:
@@ -684,8 +526,7 @@ def verify_package(fw_package: tarfile.TarFile, version: tuple[int, int, int]):
                 f"Bundle version {new_bundle_version} does not meet the requirements for version {'.'.join(map(str, version))}"
             )
 
-    global __SEMANTIC_BUNDLE_VERSION
-    __SEMANTIC_BUNDLE_VERSION = list(new_bundle_version)
+    set_semantic_bundle_version(list(new_bundle_version))
 
     return Manifest(data=manifest, bundle_version=new_bundle_version)
 
@@ -696,7 +537,7 @@ def check_galaxy_eth_link_status(devices):
     Returns True if the link is up, False otherwise.
     """
     noc_id = 0
-    DEBUG_BUF_ADDR = 0x12c0 # For eth fw 5.0.0 and above
+    DEBUG_BUF_ADDR = 0x12C0  # For eth fw 5.0.0 and above
     eth_locations_noc_0 = [ (9, 0), (1, 0), (8, 0), (2, 0), (7, 0), (3, 0), (6, 0), (4, 0),
                         (9, 6), (1, 6), (8, 6), (2, 6), (7, 6), (3, 6), (6, 6), (4, 6) ]
     LINK_INACTIVE_FAIL_DUMMY_PACKET = 10
@@ -712,7 +553,9 @@ def check_galaxy_eth_link_status(devices):
     for i, device in enumerate(devices):
         for eth in range(16):
             eth_x, eth_y = eth_locations_noc_0[eth]
-            link_error = device.noc_read32(noc_id, eth_x, eth_y, DEBUG_BUF_ADDR + 0x4*96)
+            link_error = device.noc_read32(
+                noc_id, eth_x, eth_y, DEBUG_BUF_ADDR + 0x4 * 96
+            )
             if link_error == LINK_INACTIVE_FAIL_DUMMY_PACKET:
                 link_errors[i] = eth
 
@@ -723,12 +566,12 @@ def check_galaxy_eth_link_status(devices):
                 f"\t\tBoard {board_idx} has link error on eth port {eth}",
                 CConfig.COLOR.ENDC,
             )
-        raise TTError(
-            "Galaxy Ethernet link errors detected"
-        )
+        raise TTError("Galaxy Ethernet link errors detected")
 
 
-def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0", reset_time="0xF"):
+def glx_6u_trays_reset(
+    reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0", reset_time="0xF"
+):
     """
     Reset the WH asics on the galaxy systems with the following steps:
     1. Reset the trays with ipmi command
@@ -884,9 +727,11 @@ def flash_chips(
     if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
 
-        m3_delay = 20 # M3 takes 20 seconds to boot and be ready after a reset
+        m3_delay = 20  # M3 takes 20 seconds to boot and be ready after a reset
         running_version = chip.get_bundle_version().running
-        if (running_version is None) or (running_version[0] != manifest.bundle_version[0]):
+        if (running_version is None) or (
+            running_version[0] != manifest.bundle_version[0]
+        ):
             # We crossed a major version boundary, give a longer boot timeout
             print(
                 "\t\tDetected update across major version, will wait 60 seconds for m3 to boot after reset"
@@ -956,8 +801,7 @@ def flash_chips(
 
                 if len(needs_reset_bh) > 0:
                     BHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset_bh, reset_m3=True,
-                        m3_delay=m3_delay
+                        pci_interfaces=needs_reset_bh, reset_m3=True, m3_delay=m3_delay
                     )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
@@ -968,12 +812,18 @@ def flash_chips(
             # Get a random number to send back as arg0
             check_val = random.randint(1, 0xFFFF)
             try:
-                response = chip.arc_msg(chip.fw_defines["MSG_CONFIRM_FLASHED_SPI"], arg0=check_val)
+                response = chip.arc_msg(
+                    chip.fw_defines["MSG_CONFIRM_FLASHED_SPI"], arg0=check_val
+                )
             except BaseException:
                 response = [0]
             if (response[0] & 0xFFFF) != check_val:
-                print(f"{CConfig.COLOR.YELLOW}WARNING:{CConfig.COLOR.ENDC} Post flash check failed for chip {idx}")
-                print("Try resetting the board to ensure the new firmware is loaded correctly.")
+                print(
+                    f"{CConfig.COLOR.YELLOW}WARNING:{CConfig.COLOR.ENDC} Post flash check failed for chip {idx}"
+                )
+                print(
+                    "Try resetting the board to ensure the new firmware is loaded correctly."
+                )
 
     if rc == 0:
         print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
