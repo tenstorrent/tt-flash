@@ -788,7 +788,6 @@ def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0"
 
 
 def flash_chips(
-    sys_config: Optional[dict],
     devices: list[TTChip],
     fw_package: tarfile.TarFile,
     force: bool,
@@ -911,42 +910,6 @@ def flash_chips(
             if rc != 0:
                 print(f"\t\tErrors detected during flash, skipping automatic reset...")
             else:
-                # Reset boards if necessary
-                mobo_dict_list = []
-                if sys_config is not None:
-                    for mobo_dict in sys_config.get("wh_mobo_reset", {}):
-                        # Only add the mobos that have a name
-                        if "mobo" in mobo_dict:
-                            if (
-                                "MOBO NAME" not in mobo_dict["mobo"]
-                                and mobo_dict["mobo"] in mobos
-                            ):
-                                mobo_dict_list.append(mobo_dict)
-
-                    if len(mobo_dict_list) > 0:
-                        GalaxyReset().warm_reset_mobo(mobo_dict_list)
-                        # The mobo reset will also reset all nb cards connected to the mobo.
-                        # So we'll just remove them here to avoid setting them again
-                        wh_link_pci_indices = sys_config["wh_link_reset"]["pci_index"]
-                        for entry in mobo_dict_list:
-                            if (
-                                "nb_host_pci_idx" in entry.keys()
-                                and entry["nb_host_pci_idx"]
-                            ):
-                                # remove the list of WH PCIe index's from the reset list
-                                wh_link_pci_indices = list(
-                                    set(wh_link_pci_indices)
-                                    - set(entry["nb_host_pci_idx"])
-                                )
-                            sys_config["wh_link_reset"][
-                                "pci_index"
-                            ] = wh_link_pci_indices
-                        needs_reset_wh = [
-                            idx
-                            for idx in sys_config["wh_link_reset"]["pci_index"]
-                            if idx in needs_reset_wh
-                        ]
-
                 # All chips are on BH Galaxy UBB
                 if set(to_flash) == {"GALAXY-1"}:
                     glx_6u_trays_reset()
