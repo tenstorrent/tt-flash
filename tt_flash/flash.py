@@ -21,8 +21,13 @@ from tt_flash.blackhole import boot_fs_write
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
 from tt_flash.error import TTError
-from tt_flash.utility import change_to_public_name, get_board_type, CConfig
-
+from tt_flash.utility import (
+    change_to_public_name,
+    get_board_type,
+    CConfig,
+    install_no_interrupt_handler,
+    restore_sigint_handler,
+)
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
@@ -496,23 +501,17 @@ def flash_chip_stage2(
     chip: TTChip,
     data: FlashData,
 ) -> Optional[bool]:
-    # Install sigint handler
-    def signal_handler(sig, frame):
-        print("Ctrl-C Caught: this process should not be interrupted")
-
     def perform_write(chip, writes: FlashWrite):
-        original_sigint_handler = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, signal_handler)
+        original_sigint_handler = install_no_interrupt_handler()
 
         try:
             for write in writes:
                 chip.spi_write(write.offset, write.write)
         finally:
-            signal.signal(signal.SIGINT, original_sigint_handler)
+            restore_sigint_handler(original_sigint_handler)
 
     def perform_verify(chip, writes: FlashWrite) -> Optional[Union[int, int]]:
-        original_sigint_handler = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, signal_handler)
+        original_sigint_handler = install_no_interrupt_handler()
 
         try:
             for write in writes:
@@ -528,7 +527,7 @@ def flash_chip_stage2(
                                 first_mismatch = index
                     return first_mismatch, mismatch_count
         finally:
-            signal.signal(signal.SIGINT, original_sigint_handler)
+            restore_sigint_handler(original_sigint_handler)
 
         return None
 
