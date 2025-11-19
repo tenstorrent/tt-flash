@@ -9,15 +9,26 @@ import argparse
 import datetime
 import os
 import json
+import signal
 import sys
 import tarfile
+from multiprocessing import Pool
 from pathlib import Path
 
 import tt_flash
 from tt_flash import utility
 from tt_flash.error import TTError
-from tt_flash.utility import CConfig
-from tt_flash.flash import flash_chips
+from tt_flash.utility import (
+    CConfig,
+    install_no_interrupt_handler,
+    restore_sigint_handler,
+)
+from tt_flash.flash import (
+    flash_chip,
+    post_flash_check,
+    reset_devices,
+    verify_package,
+)
 
 from .chip import detect_local_chips
 
@@ -223,15 +234,72 @@ def main():
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
-            return flash_chips(
-                devices,
-                tar,
-                args.force,
-                args.no_reset,
-                version,
-                args.allow_major_downgrades,
-                skip_missing_fw=args.skip_missing_fw,
-            )
+            print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
+            if CConfig.is_tty():
+                print("\t\tVerifying fw-package can be flashed ", end="", flush=True)
+            else:
+                print("\t\tVerifying fw-package can be flashed")
+            manifest = verify_package(tar, version)
+
+            if CConfig.is_tty():
+                print(
+                    f"\r\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
+                )
+            else:
+                print(
+                    f"\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
+                )
+
+            original_handler = install_no_interrupt_handler()
+            try:
+                print(f"\t\t{CConfig.COLOR.PURPLE}Flashing cards, please wait...{CConfig.COLOR.ENDC}")
+                # Run flash operations
+                flash_chip_args = [
+                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
+                    for dev in devices
+                ]
+                worker_init = lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)
+                with Pool(initializer=worker_init) as p:
+                    results = p.starmap(flash_chip, flash_chip_args)
+            finally:
+                restore_sigint_handler(original_handler)
+
+            # Unpack results from flash operation
+            needs_reset_wh = [res.needs_reset_wh for res in results if res.needs_reset_wh is not None]
+            needs_reset_bh = [res.needs_reset_bh for res in results if res.needs_reset_bh is not None]
+            boardnames = [res.boardname for res in results]
+            m3_delay = max((res.m3_delay for res in results), default=20)
+            rc = sum(res.rc for res in results)
+
+            # For now, just dump out all the flash messages
+            for res in results:
+                for message in res.debug_messages:
+                    print(message)
+
+            if args.no_reset:
+                if rc != 0:
+                    print(
+                        f"\t\tErrors detected during flash, would not have reset even if --no-reset was not given..."
+                    )
+                else:
+                    print(
+                        f"\t\tWould have reset to force m3 recovery, but did not due to --no-reset"
+                    )
+            else:
+                if rc != 0:
+                    print(f"\t\tErrors detected during flash, skipping automatic reset...")
+                else:
+                    devices_temp = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
+                    if devices_temp is not None:
+                        devices = devices_temp
+
+            post_flash_check(devices, manifest)
+
+            if rc == 0:
+                print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
+            else:
+                print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}")
+
         else:
             raise TTError(f"No handler for command {args.command}.")
     except Exception as e:
