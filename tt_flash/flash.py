@@ -479,6 +479,8 @@ def flash_chip_stage1(
             can_reset = False
     elif isinstance(chip, BhChip):
         can_reset = True
+    elif boardname == "WH_UBB":
+        can_reset = True
     else:
         can_reset = False
 
@@ -916,6 +918,11 @@ def flash_chips(
                     # All BH chips have now been reset
                     # Don't reset them conventionally
                     needs_reset_bh = []
+
+                # All chips are on WH Galaxy UBB
+                elif set(to_flash) == {"WH_UBB"}:
+                    glx_6u_trays_reset()
+                    needs_reset_wh = [] # Don't reset WH chips conventionally
 
                 if len(needs_reset_wh) > 0:
                     WHChipReset().full_lds_reset(
