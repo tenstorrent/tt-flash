@@ -28,6 +28,7 @@ from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.reset_common.galaxy_reset import GalaxyReset
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load
+from tt_umd import WarmReset
 
 
 def rmw_param(
@@ -797,6 +798,7 @@ def flash_chips(
     version: tuple[int, int, int],
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
+    use_umd: bool = False,
 ):
     print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
     if CConfig.is_tty():
@@ -914,7 +916,10 @@ def flash_chips(
             else:
                 # All chips are on BH Galaxy UBB
                 if set(to_flash) == {"GALAXY-1"}:
-                    glx_6u_trays_reset()
+                    if use_umd:
+                        WarmReset.ubb_warm_reset()
+                    else:
+                        glx_6u_trays_reset()
                     # All BH chips have now been reset
                     # Don't reset them conventionally
                     needs_reset_bh = []
@@ -925,18 +930,24 @@ def flash_chips(
                     needs_reset_wh = [] # Don't reset WH chips conventionally
 
                 if len(needs_reset_wh) > 0:
-                    WHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset_wh, reset_m3=True
-                    )
+                    if use_umd:
+                        WarmReset.warm_reset(pci_device_ids = needs_reset_wh, reset_m3=True)
+                    else:
+                        WHChipReset().full_lds_reset(
+                            pci_interfaces=needs_reset_wh, reset_m3=True
+                        )
 
                 if len(needs_reset_bh) > 0:
-                    BHChipReset().full_lds_reset(
-                        pci_interfaces=needs_reset_bh, reset_m3=True,
+                    if use_umd:
+                        WarmReset.warm_reset(pci_device_ids = needs_reset_bh, reset_m3=True)
+                    else:
+                        BHChipReset().full_lds_reset(
+                            pci_interfaces=needs_reset_bh, reset_m3=True,
                         m3_delay=m3_delay
-                    )
+                        )
 
                 if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
-                    devices = detect_chips()
+                    devices = detect_chips(use_umd=use_umd)
 
     for idx, chip in enumerate(devices):
         if manifest.bundle_version[0] >= 19 and isinstance(chip, BhChip):
