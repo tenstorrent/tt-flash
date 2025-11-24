@@ -334,7 +334,7 @@ def flash_chip_stage1(
         )
 
     if detected_version:
-        debug_messages.append("\t\t\tFW bundle version > ROM version. ROM will now be updated.")
+        debug_messages.append("\t\t\tFW bundle version > ROM version. ROM is being updated.")
 
     try:
         image = fw_package.extractfile(f"./{boardname}/image.bin")
@@ -521,16 +521,10 @@ def flash_chip_stage2(
 
         return None
 
-    debug_messages.append("\t\t\tWriting new firmware... (this may take up to 1 minute)")
-
     perform_write(chip, data.write)
 
     debug_messages.append(
         f"\t\t\tWriting new firmware... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
-    )
-
-    debug_messages.append(
-        "\t\t\tVerifying flashed firmware... (this may also take up to 1 minute)",
     )
 
     verify_result = perform_verify(chip, data.write)
@@ -543,18 +537,10 @@ def flash_chip_stage2(
         debug_messages.append(f"\t\t\t\tFirst Mismatch at: {first_mismatch}")
         debug_messages.append(f"\t\t\t\tFound {mismatch_count} mismatches")
 
-        debug_messages.append(
-            "\t\t\tAttempted to write firmware one more time... (this, again, may also take up to 1 minute)"
-        )
-
         perform_write(chip, data.write)
 
         debug_messages.append(
             f"\t\t\tAttempted to write firmware one more time... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
-        )
-
-        debug_messages.append(
-            "\t\t\tVerifying second flash attempt... (this may also take up to 1 minute)",
         )
 
         verify_result = perform_verify(chip, data.write)
@@ -777,9 +763,6 @@ def flash_chip(
     # Reopen the tarfile in this process
     fw_package = tarfile.open(fwbundle, "r")
 
-    debug_messages.append(
-        f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed"
-    )
     try:
         boardname = get_board_type(dev.board_type(), from_type=True)
     except:
@@ -795,6 +778,10 @@ def flash_chip(
             boardname = f"{boardname}_right"
         elif dev.get_asic_location() == 1:
             boardname = f"{boardname}_left"
+
+    debug_messages.append(
+        f"\t\tVerifying {CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} can be flashed... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
+    )
 
     debug_messages.append(f"\t{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 

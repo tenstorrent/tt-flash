@@ -252,7 +252,7 @@ def main():
 
             original_handler = install_no_interrupt_handler()
             try:
-                print(f"\t\t{CConfig.COLOR.PURPLE}Flashing cards, please wait...{CConfig.COLOR.ENDC}")
+                print(f"\t\t{CConfig.COLOR.PURPLE}Flashing cards, please wait (this could take several minutes)...{CConfig.COLOR.ENDC}")
                 # Run flash operations
                 flash_chip_args = [
                     (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
