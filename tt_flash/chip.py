@@ -28,7 +28,7 @@ class FwVersion:
 
 def get_bundle_version_v1(chip: TTChip) -> FwVersion:
     """
-    Get the currently running bundle version for gs and wh, using a legacy method
+    Get the currently running bundle version for wh, using a legacy method
 
     @param chip
 
@@ -95,12 +95,10 @@ def get_chip_data(chip, file, internal: bool):
     with utility.package_root_path() as path:
         if isinstance(chip, WhChip):
             prefix = "wormhole"
-        elif isinstance(chip, GsChip):
-            prefix = "grayskull"
         elif isinstance(chip, BhChip):
             prefix = "blackhole"
         else:
-            raise TTError("Only support flashing Wh or GS chips")
+            raise TTError("Only support flashing WH or BH chips")
         if internal:
             prefix = f".ignored/{prefix}"
         else:
@@ -307,20 +305,9 @@ class WhChip(TTChip):
         return get_bundle_version_v1(self)
 
 
-class GsChip(TTChip):
-    def min_fw_version(self):
-        return 0x1050000
-
-    def __repr__(self):
-        return f"Grayskull[{self.interface_id}]"
-
-    def get_bundle_version(self) -> FwVersion:
-        return get_bundle_version_v1(self)
-
-
 def detect_local_chips(
     ignore_ethernet: bool = False,
-) -> list[Union[GsChip, WhChip, BhChip]]:
+) -> list[Union[WhChip, BhChip]]:
     """
     This will create a chip which only gaurentees that you have communication with the chip.
     """
@@ -374,9 +361,7 @@ def detect_local_chips(
 
         device = device.force_upgrade()
 
-        if device.as_gs() is not None:
-            output.append(GsChip(device.as_gs()))
-        elif device.as_wh() is not None:
+        if device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
         elif device.as_bh() is not None:
             output.append(BhChip(device.as_bh()))
@@ -389,12 +374,10 @@ def detect_local_chips(
     return output
 
 
-def detect_chips(local_only: bool = False) -> list[Union[GsChip, WhChip, BhChip]]:
+def detect_chips(local_only: bool = False) -> list[Union[WhChip, BhChip]]:
     output = []
     for device in luwen_detect_chips(local_only=local_only):
-        if device.as_gs() is not None:
-            output.append(GsChip(device.as_gs()))
-        elif device.as_wh() is not None:
+        if device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
         elif device.as_bh() is not None:
             output.append(BhChip(device.as_bh()))
