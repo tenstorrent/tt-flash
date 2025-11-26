@@ -19,7 +19,7 @@ import random
 import tt_flash
 from tt_flash.blackhole import boot_fs_write
 from tt_flash.blackhole import FlashWrite
-from tt_flash.chip import BhChip, TTChip, GsChip, WhChip, detect_chips
+from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips
 from tt_flash.error import TTError
 from tt_flash.utility import change_to_public_name, get_board_type, CConfig
 
@@ -229,7 +229,7 @@ def flash_chip_stage1(
 
     if fw_bundle_version.exception is not None:
         if fw_bundle_version.allow_exception:
-            # Very old gs/wh fw doesn't have support for getting the fw version at all
+            # Very old wh fw doesn't have support for getting the fw version at all
             # so it's safe to assume that we need to update
             if force:
                 print(

@@ -108,9 +108,6 @@ options:
 tt-flash <firmware bundle file path goes here>
 ```
 
-### Grayskull Note
-If you are using a Grayskull-based card, the card itself does not have an on-board reset mechanism. Thus, you will need to reboot for the new firmware to apply.
-
 ### Firmware files
 Firmware files are licensed and distributed independently, as tt-flash solely acts as a utility to update devices with provided firmware images. You can find firmware bundles in a seperate repo at [https://github.com/tenstorrent/tt-firmware](https://github.com/tenstorrent/tt-firmware).
 
@@ -149,6 +146,10 @@ Stage: RESET
  Finishing PCI link reset on BH devices at PCI indices: 0 
 FLASH SUCCESS
 ```
+
+## Supported products
+
+tt-flash can be used to flash Wormhole and Blackhole products. The last version that supported flashing Grayskull products was [v3.4.7](https://github.com/tenstorrent/tt-flash/releases/tag/v3.4.7).
 
 ## License
 
