@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ctypes
+
+from base64 import b16decode
 from dataclasses import dataclass
+from io import BufferedReader
 
 from tt_flash.boot_fs import tt_boot_fs_fd
 from tt_flash.error import TTError
@@ -10,10 +13,12 @@ from . import boot_fs
 
 from tt_flash.chip import BhChip
 
+
 @dataclass
 class FlashWrite:
     offset: int
     write: bytearray
+
 
 def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrite]:
     # Find boardcfg on chip
@@ -77,5 +82,34 @@ def boot_fs_write(
 
     for handler in param_handlers:
         writes = handler(chip, writes)
+
+    return writes
+
+
+def build_flash_writes_bh(
+    chip: BhChip, image: BufferedReader, mask: dict, boardname_to_display: str
+) -> list[FlashWrite]:
+    """
+    Parses image file and returns the FlashWrite data (bytes and what offset they should be written at).
+    """
+    writes = []
+
+    curr_addr = 0
+    for line in image.decode("utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("@"):
+            curr_addr = int(line.lstrip("@").strip())
+        else:
+            data = b16decode(line)
+            curr_stop = curr_addr + len(data)
+            if not isinstance(data, bytearray):
+                data = bytearray(data)
+            writes.append(FlashWrite(curr_addr, data))
+
+            curr_addr = curr_stop
+
+    writes.sort(key=lambda x: x.offset)
+
+    writes = boot_fs_write(chip, boardname_to_display, mask, writes)
 
     return writes

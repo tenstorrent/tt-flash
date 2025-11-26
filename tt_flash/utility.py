@@ -15,6 +15,7 @@ try:
 except (ModuleNotFoundError, ImportError):
     from importlib_resources import files, as_file
 import sys
+import time
 from typing import Optional
 
 from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
@@ -34,6 +35,9 @@ def application_path():
     else:
         application_path = None
     return application_path
+
+
+# Data formatting utils
 
 
 def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
@@ -165,6 +169,32 @@ def hex_to_date(hexdate: int):
     minute = hexdate & 0xFF
 
     return f"{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}"
+
+
+# Command line utils
+
+
+def live_countdown(wait_time: float, name: str, print_initial: bool = True):
+    if print_initial:
+        print(f"{name} started, will wait {wait_time} seconds for it to complete")
+
+    # If True then we are running in an interactive environment
+    if CConfig.is_tty():
+        start = time.time()
+        elapsed = time.time() - start
+        while elapsed < wait_time:
+            print(
+                f"\r\033[K{name} ongoing, waiting {wait_time - elapsed:.1f} more seconds for it to complete",
+                end="",
+                flush=True,
+            )
+
+            time.sleep(0.1)
+            elapsed = time.time() - start
+        print(f"\r\033[K{name} completed", flush=True)
+    else:
+        time.sleep(wait_time)
+        print(f"{name} completed")
 
 
 class ConfigurableCmdColor:
