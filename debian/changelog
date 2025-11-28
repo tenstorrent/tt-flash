@@ -1,3 +1,13 @@
+tt-flash (3.4.11) noble; urgency=medium
+
+  [ Samridhi Bansal ]
+  * Chore: bump pyluwen to include bh arc msg fix
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.4.11
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 28 Nov 2025 16:34:55 +0000
+
 tt-flash (3.4.10) noble; urgency=medium
 
   [ Petra Alexson ]
