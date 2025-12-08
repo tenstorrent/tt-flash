@@ -1,3 +1,13 @@
+tt-flash (3.4.12) noble; urgency=medium
+
+  [ Petra Alexson ]
+  * Bump tt-tools-common to 1.4.33
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.4.12
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Mon, 08 Dec 2025 16:40:39 +0000
+
 tt-flash (3.4.11) noble; urgency=medium
 
   [ Samridhi Bansal ]
