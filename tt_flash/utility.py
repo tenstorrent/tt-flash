@@ -14,6 +14,7 @@ try:
     from importlib.resources import files, as_file
 except (ModuleNotFoundError, ImportError):
     from importlib_resources import files, as_file
+import signal
 import sys
 from typing import Optional
 
@@ -190,3 +191,22 @@ class CmdLineConfig:
 
 
 CConfig = CmdLineConfig(True, False)
+
+
+def install_no_interrupt_handler():
+    """
+    Install a signal handler that blocks Ctrl-C.
+    Returns the original signal handler.
+    """
+    def no_interrupt_handler(sig, frame):
+        print("\nCtrl-C detected but ignored: the flash process should not be interrupted")
+        print("Please wait for operations to complete...")
+
+    original_handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, no_interrupt_handler)
+    return original_handler
+
+
+def restore_sigint_handler(original_handler):
+    """Restore the original signal handler."""
+    signal.signal(signal.SIGINT, original_handler)
