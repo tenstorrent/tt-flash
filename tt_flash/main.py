@@ -12,6 +12,7 @@ import json
 import signal
 import sys
 import tarfile
+import threading
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from tt_flash.utility import (
     CConfig,
     install_no_interrupt_handler,
     restore_sigint_handler,
+    spinner_task
 )
 from tt_flash.flash import (
     flash_chip,
@@ -31,6 +33,7 @@ from tt_flash.flash import (
 )
 
 from .chip import detect_local_chips
+
 
 # Make version available in --help
 with utility.package_root_path() as path:
@@ -250,9 +253,14 @@ def main():
                     f"\t\tVerifying fw-package can be flashed: {CConfig.COLOR.GREEN}complete{CConfig.COLOR.ENDC}"
                 )
 
+            # Set up spinner thread
+            spinner_msg = f"\t\t{CConfig.COLOR.PURPLE}Flashing devices, this might take a minute...{CConfig.COLOR.ENDC}"
+            stop_spinner = threading.Event()
+            spinner_thread = threading.Thread(target=spinner_task, args=(spinner_msg, stop_spinner, CConfig.is_tty()))
+            spinner_thread.start()
+
             original_handler = install_no_interrupt_handler()
             try:
-                print(f"\t\t{CConfig.COLOR.PURPLE}Flashing cards, please wait (this could take several minutes)...{CConfig.COLOR.ENDC}")
                 # Run flash operations
                 flash_chip_args = [
                     (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
@@ -263,6 +271,9 @@ def main():
                     results = p.starmap(flash_chip, flash_chip_args)
             finally:
                 restore_sigint_handler(original_handler)
+                # Stop spinner
+                stop_spinner.set()
+                spinner_thread.join()
 
             # Unpack results from flash operation
             needs_reset_wh = [res.needs_reset_wh for res in results if res.needs_reset_wh is not None]

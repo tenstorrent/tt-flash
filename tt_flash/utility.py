@@ -16,6 +16,7 @@ except (ModuleNotFoundError, ImportError):
     from importlib_resources import files, as_file
 import signal
 import sys
+import time
 from typing import Optional
 
 from tt_tools_common.ui_common.themes import CMD_LINE_COLOR
@@ -210,3 +211,16 @@ def install_no_interrupt_handler():
 def restore_sigint_handler(original_handler):
     """Restore the original signal handler."""
     signal.signal(signal.SIGINT, original_handler)
+
+def spinner_task(message, stop_event, is_tty):
+    """Display a spinning animation while flashing."""
+    spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    i = 0
+    if is_tty:
+        while not stop_event.is_set():
+            print(f"\r{message} {spinner_chars[i]}", end="", flush=True)
+            i = (i + 1) % len(spinner_chars)
+            time.sleep(0.1)
+        print(f"\r{message} {CConfig.COLOR.GREEN}✓{CConfig.COLOR.ENDC}")
+    else:
+        print(f"{message}")
