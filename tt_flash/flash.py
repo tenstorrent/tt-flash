@@ -14,7 +14,7 @@ from typing import Callable, Optional, Union
 import random
 
 import tt_flash
-from tt_flash.blackhole import boot_fs_write
+from tt_flash.blackhole import boot_fs_write, parse_writes_from_image
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips
 from tt_flash.error import TTError
@@ -164,6 +164,7 @@ def live_countdown(wait_time: float, name: str, print_initial: bool = True):
     else:
         time.sleep(wait_time)
         print(f"{name} completed")
+
 
 @dataclass
 class FlashData:
@@ -376,24 +377,7 @@ def flash_chip_stage1(
     image = image.read()
 
     if isinstance(chip, BhChip):
-        writes = []
-
-        curr_addr = 0
-        for line in image.decode("utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("@"):
-                curr_addr = int(line.lstrip("@").strip())
-            else:
-                data = b16decode(line)
-                curr_stop = curr_addr + len(data)
-                if not isinstance(data, bytearray):
-                    data = bytearray(data)
-                writes.append(FlashWrite(curr_addr, data))
-
-                curr_addr = curr_stop
-
-        writes.sort(key=lambda x: x.offset)
-
+        writes = parse_writes_from_image(image)
         writes = boot_fs_write(chip, boardname_to_display, mask, writes)
     else:
         # I expected to see a list of dicts, with the keys
