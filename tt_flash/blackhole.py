@@ -1,21 +1,25 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-import ctypes
+from base64 import b16decode
 from dataclasses import dataclass
+from typing import Optional
 
-from tt_flash.boot_fs import tt_boot_fs_fd
-from tt_flash.error import TTError
-from . import boot_fs
-
+from tt_flash import boot_fs
 from tt_flash.chip import BhChip
+from tt_flash.error import TTError
+
 
 @dataclass
 class FlashWrite:
     offset: int
     write: bytearray
 
-def calculate_checksum(data: bytes):
+
+def calculate_checksum(data: bytes) -> int:
+    """
+    Calculate 32-bit additive checksum for bootrom validation
+    """
     calculated_checksum = 0
 
     if len(data) < 4:
@@ -29,6 +33,7 @@ def calculate_checksum(data: bytes):
 
     return calculated_checksum
 
+
 def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrite]:
     """
     Modify writes to flash to replace placeholder boardcfg data from the flash image
@@ -39,7 +44,7 @@ def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrit
     Args:
         chip: BH chip to be written to
         writes: A list of FlashWrites created from the flash image
-    
+
     Returns:
         A list of FlashWrites modified to include chip's existing boardcfg from its SPI.
     """
@@ -64,7 +69,9 @@ def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrit
         raise TTError("Couldn't find boardcfg in flash package")
 
     # Read back boardcfg data in SPI
-    boardcfg_in_spi = chip.spi_read(fd_in_spi[1].spi_addr, fd_in_spi[1].flags.f.image_size)
+    boardcfg_in_spi = chip.spi_read(
+        fd_in_spi[1].spi_addr, fd_in_spi[1].flags.f.image_size
+    )
 
     # Manipulate fd_in_spi
     fd_in_spi[1].spi_addr = fd_to_flash[1].spi_addr
@@ -101,9 +108,53 @@ def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrit
 TAG_HANDLERS = {"write-boardcfg": writeback_boardcfg}
 
 
+def parse_writes_from_image(image: bytes) -> list[FlashWrite]:
+    """
+    Parse data from an image file into a list of FlashWrites.
+
+    Args:
+        image: raw bytes read from an image file in a fwbundle
+
+    Returns:
+        A sorted list of FlashWrites corresponding to the image data
+    """
+    writes = []
+
+    curr_addr = 0
+    for line in image.decode("utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("@"):  # address of a flash partition
+            curr_addr = int(line.lstrip("@").strip())
+        else:
+            data = b16decode(line)
+            curr_stop = curr_addr + len(data)
+            if not isinstance(data, bytearray):
+                data = bytearray(data)
+            writes.append(FlashWrite(curr_addr, data))
+
+            curr_addr = curr_stop
+
+    writes.sort(key=lambda x: x.offset)
+
+    return writes
+
+
 def boot_fs_write(
-    chip: BhChip, boardname_to_display: str, mask: dict, writes: list[FlashWrite]
-) -> bytearray:
+    chip: BhChip, boardname_to_display: str, mask: list[dict], writes: list[FlashWrite]
+) -> list[FlashWrite]:
+    """
+    Apply board-specific modifications to writes using tags from the mask. Process the mask tags to determine which tag handlers
+    to apply to writes, then apply the handlers to modify writes.
+
+    Args:
+        chip: BH chip to be written to
+        boardname_to_display: boardname of the chip, used for generating error messages
+        mask: list of dicts containing tags
+        writes: list of FlashWrites to be modified by tag handlers
+
+    Returns:
+        list of FlashWrites modified by tag handlers
+    """
     param_handlers = []
     for v in mask:
         tag = v.get("tag", None)
