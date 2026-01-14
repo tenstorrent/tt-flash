@@ -91,11 +91,13 @@ def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrit
     for write in writes:
         if write.offset == fd_to_flash[1].spi_addr:
             data_write = write
-    if data_write is None:
-        raise TTError("Couldn't find boardcfg data write")
-
-    # Replace boardcfg data to flash with boardcfg data from SPI
-    data_write.write[0 : len(boardcfg_in_spi)] = boardcfg_in_spi
+    if data_write is not None:
+        # Replace boardcfg data to flash with boardcfg data from SPI
+        data_write.write[0 : len(boardcfg_in_spi)] = boardcfg_in_spi
+    else:
+        # No boardcfg data write in this flash image, add it in so boardcfg is written to the correct spi_addr
+        writes.append(FlashWrite(fd_to_flash[1].spi_addr, bytearray(boardcfg_in_spi)))
+        writes.sort(key=lambda x: x.offset)
 
     flashed_fd = boot_fs.read_tag(
         lambda addr, size: boardcfg_write.write[addr : addr + size], "boardcfg"
