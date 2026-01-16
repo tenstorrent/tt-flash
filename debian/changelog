@@ -1,3 +1,21 @@
+tt-flash (3.6.0) noble; urgency=medium
+
+  [ Petra Alexson ]
+  * Add helper functions to install/restore custom SIGINT handler
+  * Use multiprocessing Pool to flash chips in parallel
+  * Modify debug messages to not assume real-time output
+  * Add a spinner animation to display while flash is in progress
+  * Modify BH writeback_boardcfg to actually write back boardcfg data
+  * Organize blackhole.py
+  * Create tests folder and add tests for writeback_boardcfg
+  * Add boardcfg data FlashWrite to writes if there is no existing one
+  * Add writeback_boardcfg test case for adding boardcfg data to writes
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.6.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 16 Jan 2026 15:04:33 +0000
+
 tt-flash (3.5.0) noble; urgency=medium
 
   [ Zakhary Kaplan ]
