@@ -51,9 +51,8 @@ def bh_load_flash_writes_from_fwbundle(
 
     return parse_writes_from_image(image)
 
-
+@pytest.mark.requires_hardware
 class TestTagHandlers:
-
     def test_writeback_boardcfg_preserves_boardcfg_data(
         self, bh_chips: list[BhChip], fwbundle_path: str
     ):

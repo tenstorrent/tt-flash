@@ -15,9 +15,9 @@ import pytest
 
 from tt_flash.chip import BhChip, WhChip, detect_chips
 
-
+@pytest.mark.requires_hardware
+@pytest.mark.flash
 class TestFlash:
-
     def test_flash_preserves_board_id(
         self, devices: list[Union[BhChip, WhChip]], fwbundle_path: str
     ):

@@ -41,6 +41,16 @@ dev = [
   "black == 23.3.0; python_version == '3.7'"
 ]
 
+test = [
+  "pytest",
+]
+
+[tool.pytest.ini_options]
+markers = [
+  "requires_hardware: marks tests as requiring Tenstorrent hardware",
+  "flash: marks tests as flashing firmware Tenstorrent hardware",
+]
+
 [project.urls]
 "Homepage" = "http://tenstorrent.com"
 "Bug Reports" = "https://github.com/tenstorrent/tt-flash/issues"
