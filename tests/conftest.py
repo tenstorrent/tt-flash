@@ -5,13 +5,11 @@
 Pytest configuration and fixtures for tt_flash tests.
 """
 
-import tarfile
 from typing import Union
 
 import pytest
 
 from tt_flash.chip import detect_chips, BhChip, WhChip
-from tt_flash.utility import get_board_type
 
 
 def pytest_addoption(parser):
