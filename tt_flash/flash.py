@@ -748,7 +748,7 @@ def flash_chip(
     fw_package = tarfile.open(fwbundle, "r")
 
     try:
-        boardname = get_board_type(dev.board_type(), from_type=True)
+        boardname = get_board_type(pci_chip.board_id())
     except:
         boardname = None
 
