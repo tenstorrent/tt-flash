@@ -3,13 +3,6 @@
 
 import os
 
-from typing import Callable, Type, TYPE_CHECKING
-
-from base64 import b16decode
-
-if TYPE_CHECKING:
-    from tt_flash.chip import TTChip
-
 try:
     from importlib.resources import files, as_file
 except (ModuleNotFoundError, ImportError):
@@ -102,6 +95,8 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
     elif upi == 0x46:
         return "P300C-1"
     elif upi == 0x47:
+        if rev >= 0x3:
+            return "GALAXY-3"
         return "GALAXY-1"
     else:
         return None
@@ -123,6 +118,7 @@ def change_to_public_name(codename: str) -> str:
         "P300A": "p300",
         "P300C": "p300",
         "GALAXY-1": "Galaxy Blackhole",
+        "GALAXY-3": "Galaxy Blackhole",
     }
 
     boardname = name_map.get(codename)
