@@ -300,11 +300,13 @@ def main():
                 if rc != 0:
                     print(f"\t\tErrors detected during flash, skipping automatic reset...")
                 else:
-                    devices_temp = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
-                    if devices_temp is not None:
-                        devices = devices_temp
+                    # Remove device object so we don't hold a file descriptor
+                    # open across reset, as KMD will deny access to it after reset
+                    del devices
+                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
 
-            post_flash_check(devices, manifest)
+            if devices is not None:
+                post_flash_check(devices, manifest)
 
             if rc == 0:
                 print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
