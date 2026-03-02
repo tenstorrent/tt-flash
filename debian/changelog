@@ -1,3 +1,13 @@
+tt-flash (3.6.2) noble; urgency=medium
+
+  [ Daniel DeGrasse ]
+  * fallback to legacy board detection method if running in recovery
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.6.2
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Mon, 02 Mar 2026 23:31:23 +0000
+
 tt-flash (3.6.1) noble; urgency=medium
 
   [ Petra Alexson ]
