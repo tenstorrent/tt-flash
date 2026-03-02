@@ -750,7 +750,13 @@ def flash_chip(
     try:
         boardname = get_board_type(pci_chip.board_id())
     except:
-        boardname = None
+        # This exception can be thrown if board is running recovery FW.
+        # Fallback to a different detection method.
+        try:
+            boardname = get_board_type(dev.board_type(), from_type=True)
+        except:
+            boardname = None
+
 
     if boardname is None:
         raise TTError(f"Did not recognize board type for {dev}")
