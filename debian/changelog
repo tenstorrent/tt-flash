@@ -1,3 +1,21 @@
+tt-flash (3.6.1) noble; urgency=medium
+
+  [ Petra Alexson ]
+  * Add test.yml GitHub workflow and pytest markers
+
+  [ Daniel DeGrasse ]
+  * remove devices object prior to reset, so file descriptors are closed
+
+  [ Petra Alexson ]
+  * Add support for flashing GALAXY-3 (rev C) FW bundles
+  * Remove unused imports in tt_flash/utility.py
+  * Detect board type from board ID rather than type when flashing
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.6.1
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Mon, 02 Mar 2026 16:30:07 +0000
+
 tt-flash (3.6.0) noble; urgency=medium
 
   [ Petra Alexson ]
