@@ -4,119 +4,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from base64 import b16decode
-from datetime import date
 from enum import Enum, auto
 import json
 import tarfile
 import time
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 import random
 
-import tt_flash
 from tt_flash.blackhole import boot_fs_write, parse_writes_from_image
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips
 from tt_flash.error import TTError
 from tt_flash.utility import change_to_public_name, get_board_type, CConfig
+from tt_flash.wormhole import (
+    check_wh_can_reset,
+    nebula_x2_post_flash,
+    parse_wh_image,
+    set_bundle_version,
+)
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load, PciChip
-
-
-def rmw_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    # Read the existing data
-    existing_data = chip.spi_read(spi_addr, len)
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = existing_data
-
-    return data
-
-
-def incr_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    # Read the existing data
-    existing_data = chip.spi_read(spi_addr, len)
-
-    try:
-        data_bytes = (int.from_bytes(existing_data, "little") + 1).to_bytes(
-            len, "little"
-        )
-    except OverflowError:
-        # If we overflow, just set it to 0
-        data_bytes = (1).to_bytes(len, "little")
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = data_bytes
-
-    return data
-
-
-def date_param(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    today = date.today()
-    int_date = int(f"0x{today.strftime('%Y%m%d')}", 16)  # Date in 0xYYYYMMDD
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = int_date.to_bytes(len, "little")
-
-    return data
-
-
-def flash_version(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    version = tt_flash.__version__
-
-    version_parts = version.split(".")
-    for _ in range(version_parts.__len__(), 4):
-        version_parts.insert(0, "0")
-    version_parts = version_parts[:4]
-
-    version = [
-        int(version_parts[3]),
-        int(version_parts[2]),
-        int(version_parts[1]),
-        int(version_parts[0]),
-    ]
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = bytes(version)
-
-    return data
-
-
-# HACK(drosen): I don't want to update the callback function just to implement the bundle version
-# but it is only set once so it's not too bad to just set it as a global.
-__SEMANTIC_BUNDLE_VERSION = [0xFF, 0xFF, 0xFF, 0xFF]
-
-
-def bundle_version(
-    chip: TTChip, data: bytearray, spi_addr: int, data_addr: int, len: int
-) -> bytearray:
-    global __SEMANTIC_BUNDLE_VERSION
-
-    for _ in range(__SEMANTIC_BUNDLE_VERSION.__len__(), 4):
-        __SEMANTIC_BUNDLE_VERSION.append(0)
-    version_parts = __SEMANTIC_BUNDLE_VERSION[:4]
-
-    version = [
-        int(version_parts[3]),
-        int(version_parts[2]),
-        int(version_parts[1]),
-        int(version_parts[0]),
-    ]
-
-    # Do the RMW
-    data[data_addr : data_addr + len] = bytes(version)
-
-    return data
 
 
 def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
@@ -132,15 +41,6 @@ def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Option
     if version[0] == 80:
         return (version[1], version[2], version[3], 0)
     return version
-
-
-TAG_HANDLERS: dict[str, Callable[[TTChip, bytearray, int, int, int], bytearray]] = {
-    "rmw": rmw_param,
-    "incr": incr_param,
-    "date": date_param,
-    "flash_version": flash_version,
-    "bundle_version": bundle_version,
-}
 
 
 def live_countdown(wait_time: float, name: str, print_initial: bool = True):
@@ -380,97 +280,12 @@ def flash_chip_stage1(
         writes = parse_writes_from_image(image)
         writes = boot_fs_write(chip, boardname_to_display, mask, writes)
     else:
-        # I expected to see a list of dicts, with the keys
-        # "start", "end", "tag"
-        param_handlers = []
-        for v in mask:
-            start = v.get("start", None)
-            end = v.get("end", None)
-            tag = v.get("tag", None)
+        writes = parse_wh_image(chip, boardname_to_display, image, mask)
 
-            if (
-                (start is None or not isinstance(start, int))
-                or (end is None or not isinstance(end, int))
-                or (tag is None or not isinstance(tag, str))
-            ):
-                raise TTError(
-                    f"Invalid mask format for {boardname_to_display}; expected to see a list of dicts with keys 'start', 'end', 'tag'"
-                )
-
-            if tag in TAG_HANDLERS:
-                param_handlers.append(((start, end), TAG_HANDLERS[tag]))
-            else:
-                if len(TAG_HANDLERS) > 0:
-                    pretty_tags = [f"'{x}'" for x in TAG_HANDLERS.keys()]
-                    pretty_tags[-1] = f"or {pretty_tags[-1]}"
-                    raise TTError(
-                        f"Invalid tag {tag} for {boardname_to_display}; expected to see one of {pretty_tags}"
-                    )
-                else:
-                    raise TTError(
-                        f"Invalid tag {tag} for {boardname_to_display}; there aren't any tags defined!"
-                    )
-        writes = []
-
-        curr_addr = 0
-        for line in image.decode("utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("@"):
-                curr_addr = int(line.lstrip("@").strip())
-            else:
-                data = b16decode(line)
-
-                curr_stop = curr_addr + len(data)
-
-                for (start, end), handler in param_handlers:
-                    if start < curr_stop and end > curr_addr:
-                        # chip, data, spi_addr, data_addr, len
-                        if not isinstance(data, bytearray):
-                            data = bytearray(data)
-                        data = handler(
-                            chip, data, start, start - curr_addr, end - start
-                        )
-                    elif start >= curr_addr and start < curr_stop and end >= curr_stop:
-                        raise TTError(
-                            f"A parameter write ({start}:{end}) splits a writeable region ({curr_addr}:{curr_stop}) in {boardname_to_display}! This is not supported."
-                        )
-
-                if not isinstance(data, bytes):
-                    data = bytes(data)
-                writes.append(FlashWrite(curr_addr, data))
-
-                curr_addr = curr_stop
-
-        writes.sort(key=lambda x: x.offset)
-
-
-    if boardname in ["NEBULA_X1", "NEBULA_X2"]:
-        debug_messages.append(
-            "\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible"
-        )
-        can_reset = False
-
-        try:
-            can_reset = (
-                chip.m3_fw_app_version() >= (5, 5, 0, 0)
-                and chip.arc_l2_fw_version() >= (2, 0xC, 0, 0)
-                and chip.smbus_fw_version() >= (2, 0xC, 0, 0)
-            )
-            if can_reset:
-                debug_messages.append(
-                    f"\t\t\t\t{CConfig.COLOR.GREEN}Success:{CConfig.COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
-                )
-        except Exception as e:
-            debug_messages.append(
-                f"\t\t\t\t{CConfig.COLOR.YELLOW}Fail:{CConfig.COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
-            )
-            can_reset = False
-    elif isinstance(chip, BhChip):
-        can_reset = True
-    elif boardname == "WH_UBB":
+    if isinstance(chip, BhChip):
         can_reset = True
     else:
-        can_reset = False
+        can_reset = check_wh_can_reset(chip, boardname, debug_messages)
 
     return FlashStageResult(
         state=FlashStageResultState.Ok,
@@ -543,38 +358,7 @@ def flash_chip_stage2(
         f"\t\t\tFirmware verification... {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}"
     )
 
-    trigged_copy = False
-    if data.idname == "NEBULA_X2":
-        debug_messages.append("\t\t\tInitiating local to remote data copy")
-
-        # There is a bug in m3 app version 5.8.0.1 where we can trigger a boot loop during the left to right copy.
-        # In this condition we will disable the auto-reset before triggering the left to right copy.
-        if chip.m3_fw_app_version() == (5, 8, 0, 1):
-            debug_messages.append("Mitigating bootloop bug")
-            triggered_reset_disable = False
-            try:
-                chip.arc_msg(
-                    chip.fw_defines["MSG_UPDATE_M3_AUTO_RESET_TIMEOUT"], arg0=0
-                )
-                triggered_reset_disable = True
-            except Exception as e:
-                debug_messages.append(
-                    f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to disable the m3 autoreset; please reboot/reset your system and flash again to initiate the left to right copy."
-                )
-                return None
-            if triggered_reset_disable:
-                time.sleep(1.0) # Wait 1 second for m3 reset to disable
-
-        try:
-            chip.arc_msg(chip.fw_defines["MSG_TRIGGER_SPI_COPY_LtoR"])
-            trigged_copy = True
-        except Exception as e:
-            debug_messages.append(
-                f"\t\t\t{CConfig.COLOR.BLUE}NOTE:{CConfig.COLOR.ENDC} Failed to initiate left to right copy; please reset the host to reset the board and then rerun the flash with the --force flag to complete flash."
-            )
-            return None
-
-    return trigged_copy
+    return nebula_x2_post_flash(chip, data, debug_messages)
 
 
 @dataclass
@@ -618,8 +402,7 @@ def verify_package(fw_package: tarfile.TarFile, version: tuple[int, int, int]):
                 f"Bundle version {new_bundle_version} does not meet the requirements for version {'.'.join(map(str, version))}"
             )
 
-    global __SEMANTIC_BUNDLE_VERSION
-    __SEMANTIC_BUNDLE_VERSION = list(new_bundle_version)
+    set_bundle_version(list(new_bundle_version))
 
     return Manifest(data=manifest, bundle_version=new_bundle_version)
 
