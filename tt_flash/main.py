@@ -33,7 +33,7 @@ from tt_flash.flash import (
     verify_package,
 )
 
-from .chip import detect_local_chips
+from .chip import detect_local_chips, validate_p300_can_be_flashed
 
 
 # Make version available in --help
@@ -249,6 +249,12 @@ def main():
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
             devices = detect_local_chips(ignore_ethernet=True)
 
+            devices, p300_incomplete = validate_p300_can_be_flashed(devices)
+
+            if not devices:
+                print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: No devices available to flash.")
+                sys.exit(1)
+
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
             print(f"\t{CConfig.COLOR.GREEN}Sub Stage:{CConfig.COLOR.ENDC} VERIFY")
@@ -295,6 +301,8 @@ def main():
             boardnames = [res.boardname for res in results]
             m3_delay = max((res.m3_delay for res in results), default=20)
             rc = sum(res.rc for res in results)
+            if p300_incomplete:
+                rc += 1
 
             # For now, just dump out all the flash messages
             for res in results:
