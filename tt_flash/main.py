@@ -33,7 +33,7 @@ from tt_flash.flash import (
     verify_package,
 )
 
-from .chip import detect_local_chips
+from .chip import detect_local_chips, validate_p300_can_be_flashed
 
 
 # Make version available in --help
@@ -248,6 +248,20 @@ def main():
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
             devices = detect_local_chips(ignore_ethernet=True)
+
+            devices, p300_incomplete = validate_p300_can_be_flashed(devices)
+
+            if p300_incomplete and not args.force:
+                print(
+                    f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: "
+                    f"Aborting flash due to P300 board(s) with missing or misconfigured chips. "
+                    f"Use --force to flash all other boards while skipping the incomplete P300(s)."
+                )
+                sys.exit(1)
+
+            if not devices:
+                print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: No devices available to flash.")
+                sys.exit(1)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 

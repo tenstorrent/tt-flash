@@ -14,8 +14,11 @@ from pyluwen import PciChip, Telemetry
 from pyluwen import detect_chips as luwen_detect_chips
 from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
 
+from collections import defaultdict
+
 from tt_flash import utility
 from tt_flash.error import TTError
+from tt_flash.utility import CConfig, get_board_type
 
 
 @dataclass
@@ -202,6 +205,9 @@ class TTChip:
     def board_type(self):
         return self.luwen_chip.pci_board_type()
 
+    def board_id(self) -> int:
+        return PciChip(self.interface_id).board_id()
+
     def axi_write32(self, addr: int, value: int):
         self.luwen_chip.axi_write32(addr, value)
 
@@ -305,11 +311,70 @@ class WhChip(TTChip):
         return get_bundle_version_v1(self)
 
 
+def validate_p300_can_be_flashed(
+    devices: list[Union[WhChip, BhChip]],
+) -> tuple[list[Union[WhChip, BhChip]], bool]:
+    """
+    Validate that all detected P300 boards have both chips present. P300 boards without
+    exactly 2 chips are excluded.
+
+    Groups P300 chips by board_id (assuming unique board IDs per card in a production context)
+
+    Also verifies that the P300 board has exactly 1 chip with asic_location = 0 and exactly
+    1 chip with asic_location = 1
+
+    Returns (filtered_devices, has_incomplete_p300)
+    """
+    p300_groups: dict[int, list[BhChip]] = defaultdict(list)
+    valid_devices: list[Union[WhChip, BhChip]] = []
+
+    for dev in devices:
+        try:
+            board_id = dev.board_id()
+            board_type = get_board_type(board_id)
+        except Exception:
+            board_type = None
+
+        if board_type and "P300" in board_type:
+            p300_groups[board_id].append(dev)
+        else:
+            # only checking p300 validity so add all other devices to valid_devices
+            valid_devices.append(dev)
+
+    has_incomplete = False
+
+    for board_id, chips in p300_groups.items():
+        # Has 2 chips, but verify that ASIC locations are expected
+        if len(chips) == 2:
+            locations = {c.get_asic_location() for c in chips}
+            if locations == {0, 1}:
+                valid_devices.extend(chips)
+            else:
+                has_incomplete = True
+                print(
+                    CConfig.COLOR.RED,
+                    f"\tError: P300 board (board_id: {board_id:#x}) has 2 chips but both report ",
+                    f"the same ASIC location. Skipping flash for this board.",
+                    CConfig.COLOR.ENDC
+                )
+        # Doesn't have 2 chips
+        else:
+            has_incomplete = True
+            print(
+                CConfig.COLOR.RED,
+                f"\tError: P300 board (board_id: {board_id:#x}) has {len(chips)} chip(s) detected,",
+                f"expected 2. Skipping flash for this board.",
+                CConfig.COLOR.ENDC
+            )
+
+    return valid_devices, has_incomplete
+
+
 def detect_local_chips(
     ignore_ethernet: bool = False,
 ) -> list[Union[WhChip, BhChip]]:
     """
-    This will create a chip which only gaurentees that you have communication with the chip.
+    This will create a chip which only guarantees that you have communication with the chip.
     """
 
     chip_count = 0
