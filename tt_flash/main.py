@@ -18,6 +18,7 @@ from pathlib import Path
 
 import tt_flash
 from tt_flash import utility
+from tt_flash.download import download_fwbundle
 from tt_flash.error import TTError
 from tt_flash.utility import (
     CConfig,
@@ -96,13 +97,24 @@ def parse_args():
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
     flash = subparsers.add_parser("flash", help="Flash firmware to Tenstorrent devices on the system. Run tt-flash flash -h for further command-specific help.")
-    flash.add_argument(
+    flash_group = flash.add_mutually_exclusive_group()
+    flash_group.add_argument(
         "fwbundle",
         nargs="?",
         help="Path to the firmware bundle",
         type=Path,
     )
-    flash.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
+    flash_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
+    flash_group.add_argument(
+        "-d",
+        "--download",
+        help="Download firmware to flash; optionally specify a version (e.g. 19.6.0), defaults to latest",
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="VERSION",
+        type=str,
+    )
     flash.add_argument(
         "--skip-missing-fw",
         help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
@@ -119,28 +131,28 @@ def parse_args():
         default=False,
         action="store_true",
     )
+    flash.add_argument(
+        "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
+    )
 
     verify = subparsers.add_parser(
         "verify",
         help="Verify the contents of the SPI.\nWill display the currently running and flashed bundle version of the fw and checksum the fw against either what was flashed previously according the the file system state, or a given fw bundle.\nIn the case where a fw bundle or flash record are not provided the program will search known locations that the flash record may have been written to and exit with an error if it cannot be found or read. Run tt-flash verify -h for further command-specific help.",
     )
-    config_group = verify.add_mutually_exclusive_group()
-    config_group.add_argument(
+    verify_group = verify.add_mutually_exclusive_group()
+    verify_group.add_argument(
         "fwbundle",
         nargs="?",
         help="Path to the firmware bundle",
         type=Path,
     )
-    config_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
+    verify_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
     verify.add_argument(
         "--skip-missing-fw",
         help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
         default=False,
         action="store_true",
         required=False,
-    )
-    flash.add_argument(
-        "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
     )
 
     cmd_args = sys.argv.copy()[1:]
@@ -178,11 +190,9 @@ def parse_args():
     # Parse the args with the default behaviour
     args = parser.parse_args(args=cmd_args)
 
-    # One of either args.fwbundle or args.fw_tar is required
-    if args.fwbundle is not None and args.fw_tar is not None:
-        parser.error("argument --fw-tar not allowed with positional fwbundle argument")
-    if args.fwbundle is None and args.fw_tar is None:
-        parser.error("one of the following arguments are required: fwbundle or --fw-tar")
+    # One of fwbundle, --fw-tar, or --download is required (mutual exclusion handled by argparse group)
+    if args.fwbundle is None and args.fw_tar is None and args.download is None:
+        parser.error("one of the following arguments are required: fwbundle, --fw-tar, or --download")
 
     # --fw-tar is deprecated, warn if it's being used
     if args.fw_tar:
@@ -220,11 +230,15 @@ def main():
 
     CConfig.force_no_tty = args.no_tty
     CConfig.COLOR.use_color = not args.no_color
-    fwbundle = args.fwbundle or args.fw_tar
+
+    print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
+    if args.download is not None:
+        fwbundle = download_fwbundle(args.download, args.no_tty)
+    else:
+        fwbundle = args.fwbundle or args.fw_tar
 
     try:
         if args.command == "flash":
-            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
             try:
                 tar, version = load_manifest(fwbundle)
             except Exception as e:
