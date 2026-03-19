@@ -24,7 +24,8 @@ from tt_flash.utility import (
     CConfig,
     install_no_interrupt_handler,
     restore_sigint_handler,
-    spinner_task
+    spinner_task,
+    pool_worker_init,
 )
 from tt_flash.flash import (
     flash_chip,
@@ -280,8 +281,7 @@ def main():
                     (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
                     for dev in devices
                 ]
-                worker_init = lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)
-                with Pool(initializer=worker_init) as p:
+                with Pool(initializer=pool_worker_init) as p:
                     results = p.starmap(flash_chip, flash_chip_args)
             finally:
                 restore_sigint_handler(original_handler)
