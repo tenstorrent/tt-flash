@@ -189,6 +189,9 @@ class CmdLineConfig:
 
 CConfig = CmdLineConfig(True, False)
 
+def pool_worker_init():
+    """Ignore SIGINT on multiprocessing pool worker init"""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 def install_no_interrupt_handler():
     """
