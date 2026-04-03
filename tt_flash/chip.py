@@ -112,15 +112,22 @@ def init_fw_defines(chip):
 
 class TTChip:
     def __init__(self, chip: PciChip):
-        self.luwen_chip = chip
-        self.interface_id = chip.pci_interface_id()
+        self.chip = chip
+        self.interface_id = chip.get_pci_interface_id()
 
+        if self.use_luwen:
+            if chip.as_wh() is not None:
+                self.luwen_chip = chip.as_wh()
+            elif chip.as_bh() is not None:
+                self.luwen_chip = chip.as_bh()
+            else:
+                raise ValueError("Did not recognize board")
         self.fw_defines = init_fw_defines(self)
 
         self.telemetry_cache = None
 
     def reinit(self, callback=None):
-        self.luwen_chip = PciChip(self.interface_id)
+        self.chip = PciChip(self.interface_id)
         self.telemetry_cache = None
 
         chip_count = 0
@@ -156,12 +163,12 @@ class TTChip:
             else:
                 time.sleep(0.01)
 
-        self.luwen_chip.init(
+        self.chip.init(
             callback=chip_detect_callback if callback is None else callback
         )
 
     def get_telemetry(self) -> Telemetry:
-        self.telemetry_cache = self.luwen_chip.get_telemetry()
+        self.telemetry_cache = self.chip.get_telemetry()
         return self.telemetry_cache
 
     def get_telemetry_unchanged(self) -> Telemetry:
@@ -192,20 +199,20 @@ class TTChip:
         return telem.asic_location
 
     def board_type(self):
-        return self.luwen_chip.pci_board_type()
+        return self.chip.pci_board_type()
 
     def axi_write32(self, addr: int, value: int):
-        self.luwen_chip.axi_write32(addr, value)
+        self.chip.axi_write32(addr, value)
 
     def axi_write(self, addr: int, data: bytes):
-        self.luwen_chip.axi_write(addr, data)
+        self.chip.axi_write(addr, data)
 
     def axi_read32(self, addr: int) -> int:
-        return self.luwen_chip.axi_read32(addr)
+        return self.chip.axi_read32(addr)
 
     def axi_read(self, addr: int, size: int) -> bytes:
         data = bytearray(size)
-        self.luwen_chip.axi_read(addr, data)
+        self.chip.axi_read(addr, data)
 
         return bytes(data)
 
@@ -219,7 +226,7 @@ class TTChip:
         return bytes(data)
 
     def arc_msg(self, *args, **kwargs):
-        return self.luwen_chip.arc_msg(*args, **kwargs)
+        return self.chip.arc_msg(*args, **kwargs)
 
     @abstractmethod
     def min_fw_version(self):
@@ -279,7 +286,7 @@ class BhChip(TTChip):
         except Exception:
             print(f"\rWarning: Unable to retrieve telemetry, reading ASIC location "
                 "via fallback\n", end="", flush=True)
-            gpio_strap = self.luwen_chip.axi_read32(GPIO_STRAP_REG_L)
+            gpio_strap = self.chip.axi_read32(GPIO_STRAP_REG_L)
             # If GPIO6 is high, we are on the left ASIC
             location = (gpio_strap >> 6) & 0x1
 
@@ -354,9 +361,9 @@ def detect_local_chips(
         device = device.force_upgrade()
 
         if device.as_wh() is not None:
-            output.append(WhChip(device.as_wh()))
+            output.append(WhChip(device))
         elif device.as_bh() is not None:
-            output.append(BhChip(device.as_bh()))
+            output.append(BhChip(device))
         else:
             raise ValueError("Did not recognize board")
 
@@ -370,9 +377,9 @@ def detect_chips(local_only: bool = False) -> list[Union[WhChip, BhChip]]:
     output = []
     for device in luwen_detect_chips(local_only=local_only):
         if device.as_wh() is not None:
-            output.append(WhChip(device.as_wh()))
+            output.append(WhChip(device))
         elif device.as_bh() is not None:
-            output.append(BhChip(device.as_bh()))
+            output.append(BhChip(device))
         else:
             raise ValueError("Did not recognize board")
 

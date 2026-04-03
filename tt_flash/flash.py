@@ -518,9 +518,9 @@ def flash_chip(
     # Need to re-open chip in this process because chip object can't be pickled
     pci_chip = PciChip(interface_id)
     if pci_chip.as_bh() is not None:
-        dev = BhChip(pci_chip.as_bh())
+        dev = BhChip(pci_chip)
     elif pci_chip.as_wh() is not None:
-        dev = WhChip(pci_chip.as_wh())
+        dev = WhChip(pci_chip)
     elif skip_missing_fw:
         debug_messages.append(f"{CConfig.COLOR.YELLOW}Chip type not supported, skipping flash...{CConfig.COLOR.ENDC}")
         return FlashResult(debug_messages=debug_messages)
