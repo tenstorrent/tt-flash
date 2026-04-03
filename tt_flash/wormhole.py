@@ -220,24 +220,16 @@ def check_wh_can_reset(
         debug_messages.append(
             "\t\t\tBoard will require reset to complete update, checking if an automatic reset is possible"
         )
-        can_reset = False
-
         try:
-            can_reset = (
-                chip.m3_fw_app_version() >= (5, 5, 0, 0)
-                and chip.arc_l2_fw_version() >= (2, 0xC, 0, 0)
-                and chip.smbus_fw_version() >= (2, 0xC, 0, 0)
+            debug_messages.append(
+                f"\t\t\t\t{CConfig.COLOR.GREEN}Success:{CConfig.COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
             )
-            if can_reset:
-                debug_messages.append(
-                    f"\t\t\t\t{CConfig.COLOR.GREEN}Success:{CConfig.COLOR.ENDC} Board can be auto reset; will be triggered if the flash is successful"
-                )
+            return True
         except Exception as e:
             debug_messages.append(
                 f"\t\t\t\t{CConfig.COLOR.YELLOW}Fail:{CConfig.COLOR.ENDC} Board cannot be auto reset: Failed to get the current firmware versions. This won't stop the flash, but will require manual reset"
             )
-            can_reset = False
-        return can_reset
+            return False
     elif boardname == "WH_UBB":
         return True
     else:
