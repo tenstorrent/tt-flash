@@ -253,7 +253,7 @@ def main():
                 sys.exit(1)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
-            devices = detect_local_chips(ignore_ethernet=True)
+            devices = detect_local_chips(ignore_ethernet=True, use_luwen=args.use_luwen)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
 
@@ -283,7 +283,7 @@ def main():
             try:
                 # Run flash operations
                 flash_chip_args = [
-                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
+                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.use_luwen)
                     for dev in devices
                 ]
                 worker_init = lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)

@@ -28,7 +28,7 @@ from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load, PciChip
 
-from tt_umd import WarmReset
+from tt_umd import TTDevice, WarmReset
 
 def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
     """
@@ -508,6 +508,7 @@ def flash_chip(
     force: bool,
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
+    use_luwen: bool = False,
 ) -> FlashResult:
     """
     Flash firmware to a single chip. This function is process-safe and is intended to be called by
@@ -518,7 +519,12 @@ def flash_chip(
     debug_messages = []
 
     # Need to re-open chip in this process because chip object can't be pickled
-    pci_chip = PciChip(interface_id)
+    if use_luwen:
+        pci_chip = PciChip(interface_id)
+    else:
+        pci_chip = TTDevice.create(interface_id)
+        pci_chip.init_tt_device()
+        
     if pci_chip.as_bh() is not None:
         dev = BhChip(pci_chip)
     elif pci_chip.as_wh() is not None:
@@ -673,7 +679,7 @@ def reset_devices(
             else:
                 WarmReset.warm_reset(pci_device_ids = needs_reset_bh, reset_m3=True, m3_delay_s=datetime.timedelta(seconds=m3_delay))
 
-        devices = detect_chips()
+        devices = detect_chips(use_luwen=use_luwen)
 
     return devices
 
