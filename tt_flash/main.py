@@ -134,6 +134,12 @@ def parse_args():
     flash.add_argument(
         "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
     )
+    flash.add_argument(
+        "--use_luwen",
+        default=False,
+        action="store_true",
+        help="Use deprecated Luwen driver instead of UMD (default).",
+    )
 
     verify = subparsers.add_parser(
         "verify",
@@ -317,7 +323,7 @@ def main():
                     # Remove device object so we don't hold a file descriptor
                     # open across reset, as KMD will deny access to it after reset
                     del devices
-                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
+                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames, args.use_luwen)
 
             if devices is not None:
                 post_flash_check(devices, manifest)

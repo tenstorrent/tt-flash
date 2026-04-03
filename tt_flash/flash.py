@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
+import datetime
 import json
 import tarfile
 import time
@@ -27,6 +28,7 @@ from tt_tools_common.reset_common.bh_reset import BHChipReset
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
 from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load, PciChip
 
+from tt_umd import WarmReset
 
 def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
     """
@@ -630,7 +632,8 @@ def reset_devices(
     needs_reset_wh: list[int],
     needs_reset_bh: list[int],
     m3_delay: int,
-    boardnames: list[str]
+    boardnames: list[str],
+    use_luwen: bool = False
 ) -> Optional[list[TTChip]]:
     """
     Reset all devices that need to be reset based on lists of pci IDs to reset
@@ -650,16 +653,25 @@ def reset_devices(
         
         # All chips are on WH Galaxy UBB
         elif set(boardnames) == {"WH_UBB"}:
-            glx_6u_trays_reset()
+            if use_luwen:
+                glx_6u_trays_reset()
+            else:
+                WarmReset.ubb_warm_reset()
             needs_reset_wh = [] # Don't reset WH chips conventionally
 
         if len(needs_reset_wh) > 0:
-            WHChipReset().full_lds_reset(pci_interfaces=needs_reset_wh, reset_m3=True)
+            if use_luwen:
+                WHChipReset().full_lds_reset(pci_interfaces=needs_reset_wh, reset_m3=True)
+            else:
+                WarmReset.warm_reset(pci_device_ids = needs_reset_wh, reset_m3=True)
 
         if len(needs_reset_bh) > 0:
-            BHChipReset().full_lds_reset(
-                pci_interfaces=needs_reset_bh, reset_m3=True, m3_delay=m3_delay
-            )
+            if use_luwen:
+                BHChipReset().full_lds_reset(
+                    pci_interfaces=needs_reset_bh, reset_m3=True, m3_delay=m3_delay
+                )
+            else:
+                WarmReset.warm_reset(pci_device_ids = needs_reset_bh, reset_m3=True, m3_delay_s=datetime.timedelta(seconds=m3_delay))
 
         devices = detect_chips()
 
