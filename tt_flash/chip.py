@@ -182,14 +182,6 @@ class TTChip:
         telem = self.get_telemetry_unchanged()
         return self.__vnum_to_version(telem.m3_app_fw_version)
 
-    def smbus_fw_version(self):
-        telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.arc1_fw_version)
-
-    def arc_l2_fw_version(self):
-        telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.arc0_fw_version)
-
     def get_asic_location(self) -> int:
         """
         Get the location of the ASIC on the chip for p300
