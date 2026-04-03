@@ -117,11 +117,11 @@ class TTChip:
 
         self.fw_defines = init_fw_defines(self)
 
-        self.telmetry_cache = None
+        self.telemetry_cache = None
 
     def reinit(self, callback=None):
         self.luwen_chip = PciChip(self.interface_id)
-        self.telmetry_cache = None
+        self.telemetry_cache = None
 
         chip_count = 0
         block_count = 0
@@ -161,14 +161,14 @@ class TTChip:
         )
 
     def get_telemetry(self) -> Telemetry:
-        self.telmetry_cache = self.luwen_chip.get_telemetry()
-        return self.telmetry_cache
+        self.telemetry_cache = self.luwen_chip.get_telemetry()
+        return self.telemetry_cache
 
     def get_telemetry_unchanged(self) -> Telemetry:
-        if self.telmetry_cache is None:
-            self.telmetry_cache = self.luwen_chip.get_telemetry()
+        if self.telemetry_cache is None:
+            return self.get_telemetry()
 
-        return self.telmetry_cache
+        return self.telemetry_cache
 
     def __vnum_to_version(self, version: int) -> tuple[int, int, int, int]:
         return (
