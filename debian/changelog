@@ -1,3 +1,18 @@
+tt-flash (3.6.3) noble; urgency=medium
+
+  [ Petra Alexson ]
+  * Create wormhole.py to organize WH-only flash code
+  * Allow downloading firmware to flash from tt-system-firmware repo
+  * Cache downloaded fwbundles
+  * convert multiprocessing Pool initializer to a pickleable function
+  * P300: only flash if both chips detected
+  * tests: add tests for validate_p300_can_be_flashed()
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.6.3
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Wed, 08 Apr 2026 15:33:16 +0000
+
 tt-flash (3.6.2) noble; urgency=medium
 
   [ Daniel DeGrasse ]
