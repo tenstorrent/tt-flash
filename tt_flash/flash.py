@@ -24,8 +24,9 @@ from tt_flash.wormhole import (
 )
 from tt_tools_common.reset_common.wh_reset import WHChipReset
 from tt_tools_common.reset_common.bh_reset import BHChipReset
+from tt_tools_common.reset_common.chip_reset import ChipReset, IoctlResetFlags
 from tt_tools_common.utils_common.tools_utils import detect_chips_with_callback
-from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load, PciChip
+from pyluwen import run_wh_ubb_ipmi_reset, run_ubb_wait_for_driver_load, pci_scan, PciChip
 
 
 def normalize_fw_version(version: Optional[tuple[int, int, int, int]]) -> Optional[tuple[int, int, int, int]]:
@@ -448,9 +449,11 @@ def check_galaxy_eth_link_status(devices):
 def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0", reset_time="0xF"):
     """
     Reset the WH asics on the galaxy systems with the following steps:
-    1. Reset the trays with ipmi command
-    2. Wait for 30s
-    3. Reinit all chips
+    1. Perform USER_RESET ioctl on all chips
+    2. Reset the trays with ipmi command
+    3. Wait for 30s
+    4. Perform POST_RESET ioctl on all chips
+    5. Reinit all chips
 
     Args:
         reinit (bool): Whether to reinitialize the chips after reset.
@@ -462,6 +465,22 @@ def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0"
                         0x2 - Deasserted reset
         reset_time (str): The reset time to use. resolution 10ms (ex. 0xF => 15 => 150ms)
     """
+    # Issue USER_RESET ioctl on all devices before IPMI reset
+    user_reset_ids = pci_scan()
+    print(
+        CConfig.COLOR.PURPLE,
+        f"\t\tIssuing USER_RESET on {len(user_reset_ids)} devices before IPMI reset...",
+        CConfig.COLOR.ENDC,
+    )
+    for interface_id in user_reset_ids:
+        if not ChipReset().reset_device_ioctl(interface_id, IoctlResetFlags.USER_RESET):
+            print(
+                CConfig.COLOR.YELLOW,
+                f"\t\tWarning: USER_RESET did not complete for device {interface_id}. Continuing...",
+                CConfig.COLOR.ENDC,
+            )
+
+    # IPMI reset
     print(
         CConfig.COLOR.PURPLE,
         f"\t\tResetting Galaxy trays with reset command...",
@@ -470,6 +489,22 @@ def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0"
     run_wh_ubb_ipmi_reset(ubb_num, dev_num, op_mode, reset_time)
     live_countdown(30, "Galaxy reset")
     run_ubb_wait_for_driver_load()
+
+    # Issue POST_RESET ioctl on all devices after they reappear
+    post_reset_ids = pci_scan()
+    print(
+        CConfig.COLOR.PURPLE,
+        f"\t\tIssuing POST_RESET on {len(post_reset_ids)} devices after IPMI reset...",
+        CConfig.COLOR.ENDC,
+    )
+    for interface_id in post_reset_ids:
+        if not ChipReset().reset_device_ioctl(interface_id, IoctlResetFlags.POST_RESET):
+            print(
+                CConfig.COLOR.RED,
+                f"\t\tError: POST_RESET failed for device {interface_id}.",
+                CConfig.COLOR.ENDC,
+            )
+            sys.exit(1)
     print(
         CConfig.COLOR.PURPLE,
         f"\t\tRe-initializing boards after reset....",
