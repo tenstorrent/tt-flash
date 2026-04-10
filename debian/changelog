@@ -1,3 +1,13 @@
+tt-flash (3.6.4) noble; urgency=medium
+
+  [ Petra Alexson ]
+  * Add USER_RESET ioctl before and POST_RESET ioctl after IPMI reset
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.6.4
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 10 Apr 2026 14:41:58 +0000
+
 tt-flash (3.6.3) noble; urgency=medium
 
   [ Petra Alexson ]
