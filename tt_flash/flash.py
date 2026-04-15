@@ -676,8 +676,8 @@ def reset_devices(
     if len(needs_reset_wh) > 0 or len(needs_reset_bh) > 0:
         print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} RESET")
         # Reset boards if necessary
-        # All chips are on BH Galaxy UBB
-        if set(boardnames) == {"GALAXY-1"}:
+        # All chips are on BH Galaxy UBB (rev B / rev C, or a mix)
+        if set(boardnames) == {"GALAXY-1"} or set(boardnames) == {"GALAXY-3"}:
             glx_6u_trays_reset()
             # All BH chips have now been reset
             # Don't reset them conventionally
