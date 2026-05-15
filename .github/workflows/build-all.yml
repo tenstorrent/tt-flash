@@ -31,18 +31,19 @@ jobs:
           echo "What started this ref: ${{ github.ref }}"
           echo "What started this sha: ${{ github.sha }}"
           echo "Did we get a ref pass in? ${{ inputs.ref }}"
-  builddebian:
-    needs:
-      - build_all_depends
-    name: Build Ubuntu / Debian
-    uses: ./.github/workflows/build-debian.yml
-    with:
-      ref: ${{ inputs.ref }}
-      MAJOR:  ${{ inputs.MAJOR }}
-      MINOR:  ${{ inputs.MINOR }}
-      PATCH:  ${{ inputs.PATCH }}
-      NUMBER_OF_COMMITS_SINCE_TAG:  ${{ inputs.NUMBER_OF_COMMITS_SINCE_TAG }}
-    secrets: inherit
+  # Sunset the debian build for now, keeping the code here for now for reference.
+  # builddebian:
+  #   needs:
+  #     - build_all_depends
+  #   name: Build Ubuntu / Debian
+  #   uses: ./.github/workflows/build-debian.yml
+  #   with:
+  #     ref: ${{ inputs.ref }}
+  #     MAJOR:  ${{ inputs.MAJOR }}
+  #     MINOR:  ${{ inputs.MINOR }}
+  #     PATCH:  ${{ inputs.PATCH }}
+  #     NUMBER_OF_COMMITS_SINCE_TAG:  ${{ inputs.NUMBER_OF_COMMITS_SINCE_TAG }}
+  #   secrets: inherit
   buildpypi:
     needs:
       - build_all_depends
@@ -50,3 +51,39 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
     secrets: inherit
+  buildpyinstaller:
+    needs:
+      - build_all_depends
+      - buildpypi
+    name: Build PyInstaller binary
+    uses: ./.github/workflows/build-pyinstaller.yml
+    with:
+      ref: ${{ inputs.ref }}
+    secrets: inherit
+
+  # Single artifact so you can share one workflow-run link; Artifacts → "tt-flash-build-bundle".
+  upload_build_bundle:
+    name: Upload combined build bundle
+    needs:
+      - buildpypi
+      - buildpyinstaller
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Download wheel distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: bundle/wheels
+      - name: Download PyInstaller binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tt-flash-*
+          path: bundle/pyinstaller
+      - name: Upload build bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tt-flash-build-bundle
+          path: bundle/
