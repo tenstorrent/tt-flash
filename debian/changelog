@@ -1,3 +1,15 @@
+tt-flash (3.7.0) noble; urgency=medium
+
+  [ Samridhi Bansal ]
+  * Add pyinstaller workflow and add to build-all
+  * Sunset the debian build from build-all
+  * Add pyinstaller bin to release artifacts and sunset deb
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.7.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 15 May 2026 19:30:32 +0000
+
 tt-flash (3.6.5) noble; urgency=medium
 
   [ Samridhi Bansal ]
