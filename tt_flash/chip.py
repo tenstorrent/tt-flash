@@ -16,6 +16,8 @@ from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
 
 from collections import defaultdict
 
+from tt_umd import TTDevice, TopologyDiscoveryOptions, TopologyDiscovery, ARCH, TelemetryTag, SPITTDevice
+
 from tt_flash import utility
 from tt_flash.error import TTError
 from tt_flash.utility import CConfig, get_board_type
@@ -114,17 +116,28 @@ def init_fw_defines(chip):
 
 
 class TTChip:
-    def __init__(self, chip: PciChip):
-        self.luwen_chip = chip
-        self.interface_id = chip.pci_interface_id()
+    def __init__(self, chip: Union[PciChip, TTDevice]):
+        self.use_luwen = isinstance(chip, PciChip)
+        self.chip = chip
+        self.interface_id = chip.get_pci_interface_id()
 
+        if self.use_luwen:
+            if chip.as_wh() is not None:
+                self.luwen_chip = chip.as_wh()
+            elif chip.as_bh() is not None:
+                self.luwen_chip = chip.as_bh()
+            else:
+                raise ValueError("Did not recognize board")
         self.fw_defines = init_fw_defines(self)
 
-        self.telmetry_cache = None
+        self.telemetry_cache = None
 
     def reinit(self, callback=None):
-        self.luwen_chip = PciChip(self.interface_id)
-        self.telmetry_cache = None
+        if self.use_luwen:
+            self.chip = PciChip(self.interface_id)
+        else:
+            self.chip = TTDevice.create(self.interface_id)
+        self.telemetry_cache = None
 
         chip_count = 0
         block_count = 0
@@ -159,19 +172,48 @@ class TTChip:
             else:
                 time.sleep(0.01)
 
-        self.luwen_chip.init(
-            callback=chip_detect_callback if callback is None else callback
-        )
+        if self.use_luwen:
+            self.chip.init(
+                callback=chip_detect_callback if callback is None else callback
+            )
+        else:
+            # Unfortunately the current TTDevice API does not allow for a callback during init.
+            self.chip.init_tt_device()
 
-    def get_telemetry(self) -> Telemetry:
-        self.telmetry_cache = self.luwen_chip.get_telemetry()
-        return self.telmetry_cache
+    def get_telemetry(self):
+        if self.use_luwen:
+            self.telemetry_cache = self.chip.get_telemetry()
+            return self.telemetry_cache
+
+        # Create a simple telemetry object with the fields we need
+        class UMDTelemetry:
+            def __init__(self, reader, arch):
+                self.reader = reader
+                self.arch = arch
+                # Initialize telemetry fields
+                self.m3_app_fw_version = None
+                self.asic_location = None
+                self.fw_bundle_version = None
+                
+            def get_field(self, tag):
+                if self.reader.is_entry_available(tag):
+                    return self.reader.read_entry(tag)
+                return None
+            
+        telem_obj = UMDTelemetry(self.chip.get_arc_telemetry_reader(), self.chip.get_arch())
+
+        telem_obj.m3_app_fw_version = telem_obj.get_field(TelemetryTag.DM_APP_FW_VERSION)
+        telem_obj.asic_location = telem_obj.get_field(TelemetryTag.ASIC_LOCATION)
+        telem_obj.fw_bundle_version = telem_obj.get_field(TelemetryTag.FLASH_BUNDLE_VERSION)
+
+        self.telemetry_cache = telem_obj
+        return self.telemetry_cache
 
     def get_telemetry_unchanged(self) -> Telemetry:
-        if self.telmetry_cache is None:
-            self.telmetry_cache = self.luwen_chip.get_telemetry()
+        if self.telemetry_cache is None:
+            return self.get_telemetry()
 
-        return self.telmetry_cache
+        return self.telemetry_cache
 
     def __vnum_to_version(self, version: int) -> tuple[int, int, int, int]:
         return (
@@ -185,14 +227,6 @@ class TTChip:
         telem = self.get_telemetry_unchanged()
         return self.__vnum_to_version(telem.m3_app_fw_version)
 
-    def smbus_fw_version(self):
-        telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.arc1_fw_version)
-
-    def arc_l2_fw_version(self):
-        telem = self.get_telemetry_unchanged()
-        return self.__vnum_to_version(telem.arc0_fw_version)
-
     def get_asic_location(self) -> int:
         """
         Get the location of the ASIC on the chip for p300
@@ -203,37 +237,49 @@ class TTChip:
         return telem.asic_location
 
     def board_type(self):
-        return self.luwen_chip.pci_board_type()
+        return self.chip.pci_board_type()
 
     def board_id(self) -> int:
         return PciChip(self.interface_id).board_id()
 
     def axi_write32(self, addr: int, value: int):
-        self.luwen_chip.axi_write32(addr, value)
+        self.chip.axi_write32(addr, value)
 
     def axi_write(self, addr: int, data: bytes):
-        self.luwen_chip.axi_write(addr, data)
+        self.chip.axi_write(addr, data)
 
     def axi_read32(self, addr: int) -> int:
-        return self.luwen_chip.axi_read32(addr)
+        return self.chip.axi_read32(addr)
 
     def axi_read(self, addr: int, size: int) -> bytes:
         data = bytearray(size)
-        self.luwen_chip.axi_read(addr, data)
+        self.chip.axi_read(addr, data)
 
         return bytes(data)
 
     def spi_write(self, addr: int, data: bytes):
-        self.luwen_chip.spi_write(addr, data)
+        if self.use_luwen:
+            self.luwen_chip.spi_write(addr, data)
+        else:
+            chip_spi = SPITTDevice.create(self.chip)
+            chip_spi.write(addr, data)
 
     def spi_read(self, addr: int, size: int) -> bytes:
         data = bytearray(size)
-        self.luwen_chip.spi_read(addr, data)
+        if self.use_luwen:
+            self.luwen_chip.spi_read(addr, data)
+        else:
+            chip_spi = SPITTDevice.create(self.chip)
+            chip_spi.read(addr, data)
 
         return bytes(data)
 
     def arc_msg(self, *args, **kwargs):
-        return self.luwen_chip.arc_msg(*args, **kwargs)
+        if self.use_luwen:
+            return self.chip.arc_msg(*args, **kwargs)
+        else:
+            # Note: UMD returns exit code as the first item, so eat this up and return the rest of the data as the response.
+            return self.chip.arc_msg(*args, **kwargs)[1:]
 
     @abstractmethod
     def min_fw_version(self):
@@ -266,8 +312,12 @@ class BhChip(TTChip):
             running = (component, major, minor, patch)
 
             # Read SPI FW bundle version
-            cmfwcfg = self.luwen_chip.decode_boot_fs_table("cmfwcfg")
-            temp = cmfwcfg["fw_bundle_version"]
+            if self.use_luwen:
+                cmfwcfg = self.luwen_chip.decode_boot_fs_table("cmfwcfg")
+                temp = cmfwcfg["fw_bundle_version"]
+            else:
+                chip_spi = SPITTDevice.create(self.chip)
+                temp = chip_spi.get_spi_fw_bundle_version()
             patch = temp & 0xFF
             minor = (temp >> 8) & 0xFF
             major = (temp >> 16) & 0xFF
@@ -293,7 +343,7 @@ class BhChip(TTChip):
         except Exception:
             print(f"\rWarning: Unable to retrieve telemetry, reading ASIC location "
                 "via fallback\n", end="", flush=True)
-            gpio_strap = self.luwen_chip.axi_read32(GPIO_STRAP_REG_L)
+            gpio_strap = self.chip.axi_read32(GPIO_STRAP_REG_L)
             # If GPIO6 is high, we are on the left ASIC
             location = (gpio_strap >> 6) & 0x1
 
@@ -372,6 +422,7 @@ def validate_p300_can_be_flashed(
 
 def detect_local_chips(
     ignore_ethernet: bool = False,
+    use_luwen: bool = True,
 ) -> list[Union[WhChip, BhChip]]:
     """
     This will create a chip which only guarantees that you have communication with the chip.
@@ -413,23 +464,32 @@ def detect_local_chips(
             time.sleep(0.01)
 
     output = []
-    for device in luwen_detect_chips_fallible(
-        local_only=True,
-        continue_on_failure=False,
-        callback=chip_detect_callback,
-        noc_safe=ignore_ethernet,
-    ):
-        if not device.have_comms():
-            raise Exception(
-                f"Do not have communication with {device}, you should reset or remove this device from your system before continuing."
-            )
+    devices = []
+    if use_luwen:
+        devices = dict(enumerate(luwen_detect_chips_fallible(
+            local_only=True,
+            continue_on_failure=False,
+            callback=chip_detect_callback,
+            noc_safe=ignore_ethernet,
+        )))
+    else:
+        options = TopologyDiscoveryOptions()
+        options.wait_on_ethernet_link_training = not ignore_ethernet
+        options.discover_remote_devices = not ignore_ethernet
+        _, devices = TopologyDiscovery.discover(options)
+    for idx, device in devices.items():
+        if use_luwen:
+            if not device.have_comms():
+                raise Exception(
+                    f"Do not have communication with {device}, you should reset or remove this device from your system before continuing."
+                )
 
-        device = device.force_upgrade()
+            device = device.force_upgrade()
 
         if device.as_wh() is not None:
-            output.append(WhChip(device.as_wh()))
+            output.append(WhChip(device))
         elif device.as_bh() is not None:
-            output.append(BhChip(device.as_bh()))
+            output.append(BhChip(device))
         else:
             raise ValueError("Did not recognize board")
 
@@ -439,13 +499,22 @@ def detect_local_chips(
     return output
 
 
-def detect_chips(local_only: bool = False) -> list[Union[WhChip, BhChip]]:
+def detect_chips(local_only: bool = False, use_luwen: bool = False) -> list[Union[WhChip, BhChip]]:
     output = []
-    for device in luwen_detect_chips(local_only=local_only):
+
+    if use_luwen:
+        devices = dict(enumerate(luwen_detect_chips(local_only=local_only)))
+    else:
+        options = TopologyDiscoveryOptions()
+        options.wait_on_ethernet_link_training = not local_only
+        options.discover_remote_devices = not local_only
+        _, devices = TopologyDiscovery.discover(options)
+    
+    for _, device in devices.items():
         if device.as_wh() is not None:
-            output.append(WhChip(device.as_wh()))
+            output.append(WhChip(device))
         elif device.as_bh() is not None:
-            output.append(BhChip(device.as_bh()))
+            output.append(BhChip(device))
         else:
             raise ValueError("Did not recognize board")
 
