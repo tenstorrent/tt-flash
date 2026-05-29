@@ -107,6 +107,43 @@ def writeback_boardcfg(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrit
     return writes
 
 
+CCFGOVR_TAGS = ("ccfgovra", "ccfgovrb")
+
+
+def skip_ccfgovr(chip: BhChip, writes: list[FlashWrite]) -> list[FlashWrite]:
+    """
+    Drop the body writes for the ccfgovra and ccfgovrb banks so the on-chip
+    partitions are preserved across firmware updates.
+
+    These banks hold a CRC-protected protobuf body that the firmware decodes
+    on top of cmfwcfg at boot. They are field-updated by tt-mod (and friends),
+    which rewrites the body but cannot update the FD's data_crc — the FD lives
+    in the descriptor region, a different physical sector. The firmware
+    therefore ignores data_crc for these tags and validates each bank via the
+    cksum word stored inside its header. tt-flash mirrors that contract: we
+    leave the FD entries (and their stale data_crc values) alone, and we don't
+    overwrite the bank bodies. On a chip that has never seen these partitions,
+    the on-chip bytes are 0xFF and the firmware falls back to cmfwcfg, which
+    is the documented first-boot behaviour.
+    """
+    for tag in CCFGOVR_TAGS:
+        fd_to_flash = None
+        for write in writes:
+            fd_to_flash = boot_fs.read_tag(
+                lambda addr, size: write.write[addr : addr + size], tag
+            )
+            if fd_to_flash is not None:
+                break
+
+        if fd_to_flash is None:
+            continue
+
+        bank_addr = fd_to_flash[1].spi_addr
+        writes = [w for w in writes if w.offset != bank_addr]
+
+    return writes
+
+
 TAG_HANDLERS = {"write-boardcfg": writeback_boardcfg}
 
 
@@ -182,5 +219,12 @@ def boot_fs_write(
 
     for handler in param_handlers:
         writes = handler(chip, writes)
+
+    # Always preserve any on-chip ccfgovr banks: the image ships an empty
+    # bank but the on-chip bytes may have been mutated in the field by
+    # tt-mod, and the firmware decodes them on top of cmfwcfg at boot.
+    # Triggered by the FD entries being present in the image, not by a
+    # mask.json tag, so older bundles without ccfgovr remain a no-op.
+    writes = skip_ccfgovr(chip, writes)
 
     return writes
