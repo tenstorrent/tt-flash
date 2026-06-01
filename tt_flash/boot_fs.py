@@ -127,8 +127,11 @@ class tt_boot_fs_fd(ExtendedStructure):
         return output
 
 
-def read_fd(reader, addr: int) -> tt_boot_fs_fd:
-    fd = reader(addr, ctypes.sizeof(tt_boot_fs_fd))
+def read_fd(reader, addr: int) -> Optional[tt_boot_fs_fd]:
+    fd_size = ctypes.sizeof(tt_boot_fs_fd)
+    fd = reader(addr, fd_size)
+    if len(fd) < fd_size:
+        return None
     return tt_boot_fs_fd.from_buffer_copy(fd)
 
 
@@ -139,7 +142,7 @@ def read_tag(
     while True:
         fd = read_fd(reader, curr_addr)
 
-        if fd.flags.f.invalid != 0:
+        if fd is None or fd.flags.f.invalid != 0:
             return None
 
         if fd.image_tag_str() == tag:
