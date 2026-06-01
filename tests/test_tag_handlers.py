@@ -13,7 +13,13 @@ import tarfile
 import pytest
 
 from tt_flash import boot_fs
-from tt_flash.blackhole import writeback_boardcfg, parse_writes_from_image, FlashWrite
+from tt_flash.blackhole import (
+    CCFGOVR_TAGS,
+    FlashWrite,
+    parse_writes_from_image,
+    skip_ccfgovr,
+    writeback_boardcfg,
+)
 from tt_flash.chip import BhChip, TTChip
 from tt_flash.utility import get_board_type
 
@@ -103,6 +109,46 @@ class TestTagHandlers:
             assert (
                 new_boardcfg_data == current_boardcfg_data
             ), "boardcfg data not preserved"
+
+    def test_skip_ccfgovr_drops_bank_writes(
+        self, bh_chips: list[BhChip], fwbundle_path: str
+    ):
+        """
+        BH Only.
+        skip_ccfgovr should remove the body FlashWrite for each ccfgovr bank
+        present in the image while leaving the FD entries in place.
+        """
+        for bh_chip in bh_chips:
+            writes = bh_load_flash_writes_from_fwbundle(bh_chip, fwbundle_path)
+
+            bank_addrs = {}
+            for tag in CCFGOVR_TAGS:
+                for write in writes:
+                    fd = boot_fs.read_tag(
+                        lambda addr, size: write.write[addr : addr + size], tag
+                    )
+                    if fd is not None:
+                        bank_addrs[tag] = fd[1].spi_addr
+                        break
+
+            if not bank_addrs:
+                pytest.skip("fwbundle has no ccfgovr banks for this board")
+
+            writes = skip_ccfgovr(bh_chip, writes)
+
+            for tag, addr in bank_addrs.items():
+                assert not any(w.offset == addr for w in writes), (
+                    f"skip_ccfgovr left a body write for {tag} at 0x{addr:x}"
+                )
+                # FD entry must still be locatable in the remaining writes.
+                found_fd = False
+                for write in writes:
+                    if boot_fs.read_tag(
+                        lambda a, s: write.write[a : a + s], tag
+                    ) is not None:
+                        found_fd = True
+                        break
+                assert found_fd, f"skip_ccfgovr removed the {tag} FD entry"
 
     # TODO: test if boardcfg is a decodable read-only protobuf?
 
