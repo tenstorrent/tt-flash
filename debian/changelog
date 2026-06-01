@@ -1,3 +1,14 @@
+tt-flash (3.8.0) noble; urgency=medium
+
+  [ Zakhary Kaplan ]
+  * feat(bh): preserve ccfgovr table across flashes
+  * boot_fs: stop read_tag from walking off the buffer end
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.8.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Mon, 01 Jun 2026 18:02:28 +0000
+
 tt-flash (3.7.0) noble; urgency=medium
 
   [ Samridhi Bansal ]
