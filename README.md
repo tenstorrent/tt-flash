@@ -26,22 +26,20 @@ source "$HOME/.cargo/env"
 ```
 
 ### User installation
-tt-flash is available on pypi and can be installed using pip.
+
+tt-flash is available on PyPI. We recommend running it with [`uvx`](https://docs.astral.sh/uv/guides/tools/), which ensures you always run the latest released version.
+
+Install `uv` if you don't already have it:
 
 ```
-pip install tt-flash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-#### (Optional) Virtual environment
-
-If you aren't doing
-this as a system-level install, a virtual environment is recommended.
+Then run tt-flash:
 
 ```
-python -m venv .venv
-source .venv/bin/activate
+uvx tt-flash@latest <firmware bundle file path>
 ```
-
 
 ### Developer installation
 #### Clone the repository
@@ -50,16 +48,13 @@ git clone https://github.com/tenstorrent/tt-flash.git
 cd tt-flash
 ```
 
-#### Building the repository
-```
-pip install .
-```
-
-or for users who would like to edit the code without re-building
+#### Install
 
 ```
-pip install --editable .
+uv sync
 ```
+
+This creates a `.venv` and installs tt-flash in editable mode along with its dependencies. Run the local build with `uv run tt-flash`, or activate the venv (`source .venv/bin/activate`) and use `tt-flash` directly.
 
 ### Help text
 Use the `-h` argument to print the help text.
