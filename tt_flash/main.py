@@ -135,6 +135,12 @@ def parse_args():
     flash.add_argument(
         "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
     )
+    flash.add_argument(
+        "--use_luwen",
+        default=False,
+        action="store_true",
+        help="Use deprecated Luwen driver instead of UMD (default).",
+    )
 
     verify = subparsers.add_parser(
         "verify",
@@ -248,7 +254,7 @@ def main():
                 sys.exit(1)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
-            devices = detect_local_chips(ignore_ethernet=True)
+            devices = detect_local_chips(ignore_ethernet=True, use_luwen=args.use_luwen)
 
             devices, p300_incomplete = validate_p300_can_be_flashed(devices)
 
@@ -292,7 +298,7 @@ def main():
             try:
                 # Run flash operations
                 flash_chip_args = [
-                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
+                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.use_luwen)
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init) as p:
@@ -331,7 +337,7 @@ def main():
                     # Remove device object so we don't hold a file descriptor
                     # open across reset, as KMD will deny access to it after reset
                     del devices
-                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
+                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames, args.use_luwen)
 
             if devices is not None:
                 post_flash_check(devices, manifest)
