@@ -340,12 +340,13 @@ def main():
                 print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
             else:
                 print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}")
+            return rc
 
         else:
             raise TTError(f"No handler for command {args.command}.")
     except Exception as e:
         print(f"{CConfig.COLOR.RED}Error: {e} {CConfig.COLOR.ENDC}")
-
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())
