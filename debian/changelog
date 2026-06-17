@@ -1,3 +1,16 @@
+tt-flash (3.9.0) noble; urgency=medium
+
+  [ Zakhary Kaplan ]
+  * Switch README install instructions to uv
+
+  [ Aaron Fong ]
+  * Return non-zero exit code to shell on failures
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.9.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Wed, 17 Jun 2026 07:50:37 +0000
+
 tt-flash (3.8.0) noble; urgency=medium
 
   [ Zakhary Kaplan ]
