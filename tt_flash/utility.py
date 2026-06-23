@@ -80,6 +80,8 @@ def get_board_type(board_id: int, from_type: bool = False) -> Optional[str]:
         return "WH_UBB"
     elif upi == 0x36:
         return "P100-1"
+    elif upi == 0x37:
+        return "ORION_SLT-1"
     elif upi == 0x40:
         return "P150A-1"
     elif upi == 0x41:
@@ -111,6 +113,7 @@ def change_to_public_name(codename: str) -> str:
         "NEBULA_X2": "n300",
         "WH_UBB": "Galaxy Wormhole",
         "P100-1": "p100",
+        "ORION_SLT-1": "orion_slt",
         "P150A-1": "p150a",
         "P150B-1": "p150b",
         "P150C-1": "p150c",
