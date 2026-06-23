@@ -1,3 +1,13 @@
+tt-flash (3.10.0) noble; urgency=medium
+
+  [ Alex Apostolu ]
+  * Add support for Orion SLT
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.10.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Tue, 23 Jun 2026 19:57:42 +0000
+
 tt-flash (3.9.0) noble; urgency=medium
 
   [ Zakhary Kaplan ]
