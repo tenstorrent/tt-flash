@@ -8,7 +8,7 @@ from enum import Enum, auto
 import json
 import tarfile
 import time
-from typing import Optional, Union
+from typing import Optional
 import random
 
 from tt_flash.blackhole import boot_fs_write, parse_writes_from_image
@@ -299,6 +299,31 @@ def flash_chip_stage1(
     )
 
 
+def verify_writes(chip: TTChip, writes: list[FlashWrite]) -> Optional[tuple[int, int]]:
+    """Compare what is in the SPI against the writes that should be there.
+
+    Returns None when every write matches, otherwise (first_mismatch,
+    mismatch_count) for the first write that differs.
+
+    Read-only: this only issues spi_read, so it is safe to run against a device
+    that is not being flashed.
+    """
+    for write in writes:
+        base_data = chip.spi_read(write.offset, len(write.write))
+
+        if base_data != write.write:
+            first_mismatch = None
+            mismatch_count = 0
+            for index, (a, b) in enumerate(zip(base_data, write.write)):
+                if a != b:
+                    mismatch_count += 1
+                    if first_mismatch is None:
+                        first_mismatch = index
+            return first_mismatch, mismatch_count
+
+    return None
+
+
 def flash_chip_stage2(
     chip: TTChip,
     data: FlashData,
@@ -308,21 +333,10 @@ def flash_chip_stage2(
         for write in writes:
             chip.spi_write(write.offset, write.write)
 
-    def perform_verify(chip, writes: FlashWrite) -> Optional[Union[int, int]]:
-        for write in writes:
-            base_data = chip.spi_read(write.offset, len(write.write))
-
-            if base_data != write.write:
-                first_mismatch = None
-                mismatch_count = 0
-                for index, (a, b) in enumerate(zip(base_data, write.write)):
-                    if a != b:
-                        mismatch_count += 1
-                        if first_mismatch is None:
-                            first_mismatch = index
-                return first_mismatch, mismatch_count
-
-        return None
+    # Kept as a local alias so the flow below reads unchanged; the
+    # implementation now lives at module scope so `tt-flash verify` can reuse
+    # it without going through a flash.
+    perform_verify = verify_writes
 
     perform_write(chip, data.write)
 
@@ -658,6 +672,102 @@ def flash_chip(
         m3_delay = m3_delay,
         rc = rc
     )
+
+
+@dataclass
+class VerifyResult:
+    debug_messages: list[str]
+    boardname: str = ""
+    rc: int = 0
+
+
+def verify_chip(
+    interface_id: int,
+    fwbundle: str,
+    manifest: Manifest,
+    skip_missing_fw: bool = False,
+) -> VerifyResult:
+    """Check a chip's SPI contents against the firmware bundle, without writing.
+
+    Mirrors flash_chip up to the point where it would write: same chip
+    detection, same board image, same expected writes. It then reads the SPI
+    back and compares instead of flashing.
+
+    stage1 runs with force=True so it always produces the writes; without it
+    a chip already running this bundle short-circuits to NoFlash and there
+    would be nothing to compare against -- which is exactly the case verify
+    exists to confirm.
+    """
+    debug_messages = []
+
+    # Need to re-open chip in this process because chip object can't be pickled
+    pci_chip = PciChip(interface_id)
+    if pci_chip.as_bh() is not None:
+        dev = BhChip(pci_chip.as_bh())
+    elif pci_chip.as_wh() is not None:
+        dev = WhChip(pci_chip.as_wh())
+    elif skip_missing_fw:
+        debug_messages.append(f"{CConfig.COLOR.YELLOW}Chip type not supported, skipping verify...{CConfig.COLOR.ENDC}")
+        return VerifyResult(debug_messages=debug_messages)
+    else:
+        raise TTError("Chip type not supported")
+
+    # Reopen the tarfile in this process
+    fw_package = tarfile.open(fwbundle, "r")
+
+    # Falls back to the PCI subsystem id when the chip cannot name its own
+    # board, which is the case while it runs recovery FW.
+    boardname = resolve_board_type(dev)
+
+    if boardname is None:
+        raise TTError(f"Did not recognize board type for {dev}")
+
+    # For p300 we need to check if its L or R chip
+    if "P300" in boardname:
+        # 0 = Right, 1 = Left
+        location = dev.get_asic_location()
+        if location == 0:
+            boardname = f"{boardname}_right"
+        elif location == 1:
+            boardname = f"{boardname}_left"
+
+    result = flash_chip_stage1(
+        dev,
+        boardname,
+        manifest,
+        fw_package,
+        debug_messages,
+        force=True,
+        allow_major_downgrades=True,
+        skip_missing_fw=skip_missing_fw,
+    )
+
+    if result.state == FlashStageResultState.Err:
+        debug_messages.append(f"\t\t{CConfig.COLOR.RED}{dev}: {result.msg}{CConfig.COLOR.ENDC}")
+        return VerifyResult(debug_messages=debug_messages, boardname=boardname, rc=1)
+
+    if result.data is None:
+        debug_messages.append(
+            f"\t\t{CConfig.COLOR.YELLOW}{dev}: no firmware in the bundle for this board, skipping{CConfig.COLOR.ENDC}"
+        )
+        return VerifyResult(debug_messages=debug_messages, boardname=boardname)
+
+    mismatch = verify_writes(dev, result.data.write)
+    if mismatch is None:
+        debug_messages.append(
+            f"\t\t{CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} {{{result.data.name}}}: "
+            f"{CConfig.COLOR.GREEN}matches{CConfig.COLOR.ENDC}"
+        )
+        return VerifyResult(debug_messages=debug_messages, boardname=boardname)
+
+    first_mismatch, mismatch_count = mismatch
+    debug_messages.append(
+        f"\t\t{CConfig.COLOR.BLUE}{dev}{CConfig.COLOR.ENDC} {{{result.data.name}}}: "
+        f"{CConfig.COLOR.RED}differs{CConfig.COLOR.ENDC}"
+    )
+    debug_messages.append(f"\t\t\tFirst mismatch at: {first_mismatch}")
+    debug_messages.append(f"\t\t\tFound {mismatch_count} mismatches")
+    return VerifyResult(debug_messages=debug_messages, boardname=boardname, rc=1)
 
 
 def reset_devices(
