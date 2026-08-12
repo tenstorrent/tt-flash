@@ -311,6 +311,29 @@ class WhChip(TTChip):
         return get_bundle_version_v1(self)
 
 
+def resolve_board_type(dev: Union[WhChip, BhChip]) -> Optional[str]:
+    """
+    Board type of a chip, or None if nothing on the chip identifies it.
+
+    A chip running recovery firmware publishes no board id: board_id() either
+    raises or reads back as 0, which get_board_type does not recognize. Ask the
+    PCI device in that case. Its subsystem id carries the same UPI and does not
+    depend on what the chip is running.
+    """
+    try:
+        board_type = get_board_type(dev.board_id())
+    except Exception:
+        board_type = None
+
+    if board_type is None:
+        try:
+            board_type = get_board_type(dev.board_type(), from_type=True)
+        except Exception:
+            board_type = None
+
+    return board_type
+
+
 def validate_p300_can_be_flashed(
     devices: list[Union[WhChip, BhChip]],
 ) -> tuple[list[Union[WhChip, BhChip]], bool]:
@@ -320,50 +343,87 @@ def validate_p300_can_be_flashed(
 
     Groups P300 chips by board_id (assuming unique board IDs per card in a production context)
 
+    A chip running recovery firmware reports no board id and so cannot be
+    grouped that way. It is still a chip that needs flashing -- that is how a
+    board gets out of recovery -- so pair it with the sibling that is missing
+    one, rather than leaving both halves of the card unflashed.
+
     Also verifies that the P300 board has exactly 1 chip with asic_location = 0 and exactly
     1 chip with asic_location = 1
 
     Returns (filtered_devices, has_incomplete_p300)
     """
     p300_groups: dict[int, list[BhChip]] = defaultdict(list)
+    unidentified: list[BhChip] = []
     valid_devices: list[Union[WhChip, BhChip]] = []
 
     for dev in devices:
-        try:
-            board_id = dev.board_id()
-            board_type = get_board_type(board_id)
-        except Exception:
-            board_type = None
+        board_type = resolve_board_type(dev)
 
-        if board_type and "P300" in board_type:
-            p300_groups[board_id].append(dev)
-        else:
+        if not (board_type and "P300" in board_type):
             # only checking p300 validity so add all other devices to valid_devices
             valid_devices.append(dev)
+            continue
+
+        try:
+            board_id = dev.board_id()
+        except Exception:
+            board_id = 0
+
+        if board_id:
+            p300_groups[board_id].append(dev)
+        else:
+            unidentified.append(dev)
+
+    boards: list[tuple[Optional[int], list[BhChip]]] = []
+    for board_id, chips in p300_groups.items():
+        if len(chips) == 1 and unidentified:
+            chips.append(unidentified.pop())
+        boards.append((board_id, chips))
+
+    # Cards with neither chip able to name its board.
+    while len(unidentified) >= 2:
+        boards.append((None, [unidentified.pop(), unidentified.pop()]))
+    if unidentified:
+        boards.append((None, list(unidentified)))
 
     has_incomplete = False
 
-    for board_id, chips in p300_groups.items():
-        # Has 2 chips, but verify that ASIC locations are expected
-        if len(chips) == 2:
-            locations = {c.get_asic_location() for c in chips}
-            if locations == {0, 1}:
-                valid_devices.extend(chips)
-            else:
-                has_incomplete = True
-                print(
-                    CConfig.COLOR.RED,
-                    f"\tError: P300 board (board_id: {board_id:#x}) has 2 chips but both report ",
-                    f"the same ASIC location. Skipping flash for this board.",
-                    CConfig.COLOR.ENDC
-                )
+    for board_id, chips in boards:
+        board = f"board_id: {board_id:#x}" if board_id is not None else "no board id"
+
         # Doesn't have 2 chips
+        if len(chips) != 2:
+            has_incomplete = True
+            print(
+                CConfig.COLOR.RED,
+                f"\tError: P300 board ({board}) has {len(chips)} chip(s) detected,",
+                f"expected 2. Skipping flash for this board.",
+                CConfig.COLOR.ENDC
+            )
+            continue
+
+        # Has 2 chips, but verify that ASIC locations are expected
+        try:
+            locations = {c.get_asic_location() for c in chips}
+        except Exception as e:
+            has_incomplete = True
+            print(
+                CConfig.COLOR.RED,
+                f"\tError: P300 board ({board}) has 2 chips but their ASIC ",
+                f"locations could not be read ({e}). Skipping flash for this board.",
+                CConfig.COLOR.ENDC
+            )
+            continue
+
+        if locations == {0, 1}:
+            valid_devices.extend(chips)
         else:
             has_incomplete = True
             print(
                 CConfig.COLOR.RED,
-                f"\tError: P300 board (board_id: {board_id:#x}) has {len(chips)} chip(s) detected,",
-                f"expected 2. Skipping flash for this board.",
+                f"\tError: P300 board ({board}) has 2 chips but both report ",
+                f"the same ASIC location. Skipping flash for this board.",
                 CConfig.COLOR.ENDC
             )
 
