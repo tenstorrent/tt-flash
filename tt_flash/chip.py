@@ -334,6 +334,36 @@ def resolve_board_type(dev: Union[WhChip, BhChip]) -> Optional[str]:
     return board_type
 
 
+def _asic_location(chip: BhChip) -> Optional[int]:
+    """
+    ASIC location of a chip, or None if it cannot be read.
+    """
+    try:
+        return chip.get_asic_location()
+    except Exception:
+        return None
+
+
+def _take_complement(pool: list[BhChip], chip: BhChip) -> Optional[BhChip]:
+    """
+    Remove and return the chip in pool that sits at the other ASIC location on
+    a card, or None when nothing in pool complements chip.
+
+    A P300 holds one ASIC at location 0 and one at location 1, so the only
+    chip in the pool that can be chip's sibling is one reporting the other
+    location. Any other choice pairs chips from different cards.
+    """
+    location = _asic_location(chip)
+    if location is None:
+        return None
+
+    for i, candidate in enumerate(pool):
+        if _asic_location(candidate) == 1 - location:
+            return pool.pop(i)
+
+    return None
+
+
 def validate_p300_can_be_flashed(
     devices: list[Union[WhChip, BhChip]],
 ) -> tuple[list[Union[WhChip, BhChip]], bool]:
@@ -345,8 +375,9 @@ def validate_p300_can_be_flashed(
 
     A chip running recovery firmware reports no board id and so cannot be
     grouped that way. It is still a chip that needs flashing -- that is how a
-    board gets out of recovery -- so pair it with the sibling that is missing
-    one, rather than leaving both halves of the card unflashed.
+    board gets out of recovery -- so pair it with a group that is missing one,
+    rather than leaving both halves of the card unflashed. Only a chip at the
+    other ASIC location can be that sibling; see _take_complement.
 
     Also verifies that the P300 board has exactly 1 chip with asic_location = 0 and exactly
     1 chip with asic_location = 1
@@ -378,12 +409,21 @@ def validate_p300_can_be_flashed(
     boards: list[tuple[Optional[int], list[BhChip]]] = []
     for board_id, chips in p300_groups.items():
         if len(chips) == 1 and unidentified:
-            chips.append(unidentified.pop())
+            sibling = _take_complement(unidentified, chips[0])
+            if sibling is not None:
+                chips.append(sibling)
         boards.append((board_id, chips))
 
-    # Cards with neither chip able to name its board.
+    # Cards with neither chip able to name its board. The board id that would
+    # group them is exactly what recovery firmware doesn't publish, so ASIC
+    # location is all there is to pair on.
     while len(unidentified) >= 2:
-        boards.append((None, [unidentified.pop(), unidentified.pop()]))
+        chip = unidentified.pop()
+        sibling = _take_complement(unidentified, chip)
+        if sibling is None:
+            unidentified.append(chip)
+            break
+        boards.append((None, [chip, sibling]))
     if unidentified:
         boards.append((None, list(unidentified)))
 
