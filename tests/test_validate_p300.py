@@ -149,6 +149,65 @@ class TestValidateP300:
         assert not incomplete
         assert len(valid) == 2
 
+    def test_two_cards_each_half_in_recovery(self):
+        """
+        Two cards, each with one half in recovery, must not be cross-paired.
+        Pairing on anything but ASIC location produces two same-location pairs,
+        both of which are then rejected, leaving all four chips unflashed.
+        """
+        a = make_board_id(serial=0xA)
+        b = make_board_id(serial=0xB)
+        chips = [
+            FakeTTChip(a, 0),
+            FakeTTChip(0x0, 1, 0x45),
+            FakeTTChip(0x0, 0, 0x45),
+            FakeTTChip(b, 1),
+        ]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert not incomplete
+        assert len(valid) == 4
+
+    def test_unreadable_location_does_not_strand_pairable_chips(self):
+        """
+        A recovery chip whose ASIC location cannot be read is set aside, not
+        treated as the end of the pairing pass. Ending the pass there would
+        leave the chips behind it unpaired and so unflashed, on an ordering
+        that says nothing about the hardware.
+        """
+        class UnreadableLocation(FakeTTChip):
+            def get_asic_location(self) -> int:
+                raise RuntimeError("no telemetry")
+
+        pairable = [FakeTTChip(0x0, 0, 0x45), FakeTTChip(0x0, 1, 0x45)]
+        unreadable = UnreadableLocation(0x0, 0, 0x45)
+
+        for chips in ([*pairable, unreadable], [unreadable, *pairable]):
+            valid, incomplete = validate_p300_can_be_flashed(chips)
+
+            assert incomplete, "the unpairable chip should still be reported"
+            assert sorted(id(c) for c in valid) == sorted(id(c) for c in pairable)
+
+    def test_ambiguous_recovery_chip_is_not_adopted(self):
+        """
+        With two cards each missing a half, nothing says which one a lone
+        recovery chip belongs to. Guessing reports a pair drawn from two
+        different cards as complete, so no adoption happens at all.
+        """
+        a = make_board_id(serial=0xA)
+        b = make_board_id(serial=0xB)
+        chips = [
+            FakeTTChip(a, 0),
+            FakeTTChip(b, 0),
+            FakeTTChip(0x0, 1, 0x45),
+        ]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert incomplete
+        assert len(valid) == 0
+
     def test_chip_in_recovery_alone(self):
         """A lone recovery chip is still half a card, so it is excluded."""
         valid, incomplete = validate_p300_can_be_flashed([FakeTTChip(0x0, 0, 0x45)])

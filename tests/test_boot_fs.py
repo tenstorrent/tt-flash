@@ -240,3 +240,37 @@ def test_read_tag_matches_non_executable_failover_slot():
     assert addr == boot_fs.TT_BOOT_FS_FAILOVER_HEAD_ADDR
     assert fd.spi_addr == 0xB4000
     assert not fd.flags.f.executable
+
+
+def test_read_tag_scans_a_full_rom_table():
+    """
+    A pre-split flash keeps every image in the table at 0x0, which has room for
+    far more descriptors than the firmware's per-table default. Bounding the
+    scan by that default hides the tail of such a table, and the caller sees a
+    missing tag rather than a bounds problem.
+    """
+    entries = [(f"img{i:04}", 0x14000 + i * 0x1000) for i in range(64)]
+    assert len(entries) > boot_fs.MAX_FDS_PER_TABLE
+
+    flash = bytearray(b"\xff" * 0x200000)
+    rom = make_table(entries)
+    assert len(rom) <= boot_fs.TT_BOOT_FS_SECURITY_BINARY_FD_ADDR
+    flash[0 : len(rom)] = rom
+
+    reader = reader_for(bytes(flash))
+    last_tag, last_addr = entries[-1]
+    found = boot_fs.read_tag(reader, last_tag)
+
+    assert found is not None, "descriptor past the per-table default was missed"
+    assert found[1].spi_addr == last_addr
+
+
+def test_table_fd_capacity_is_bounded_by_the_next_region():
+    """Fixed tables end where the next structure in flash begins."""
+    fd_size = ctypes.sizeof(tt_boot_fs_fd)
+    assert boot_fs.table_fd_capacity(boot_fs.TT_BOOT_FS_FD_HEAD_ADDR) == (
+        boot_fs.TT_BOOT_FS_SECURITY_BINARY_FD_ADDR // fd_size
+    )
+    # A table reached through the multi-table header has no known extent, so it
+    # keeps the firmware default as a corruption backstop.
+    assert boot_fs.table_fd_capacity(0x170000) == boot_fs.MAX_FDS_PER_TABLE

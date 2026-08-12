@@ -22,6 +22,8 @@ from tt_flash.blackhole import (
     MCUBOOT_TLV_SHA256,
     FlashWrite,
     calculate_checksum,
+    _find_fd_in_writes,
+    boot_image_identity,
     skip_boot_critical,
     skip_unchanged_static_regions,
 )
@@ -538,3 +540,57 @@ def test_skip_boot_critical_ignores_tags_absent_from_image():
     result = skip_boot_critical(chip, writes)
 
     assert [w.offset for w in result] == [0x170000]
+
+
+def test_boot_image_identity_terminates_on_a_zero_size_tlv_section():
+    # A TLV info header claiming a total size that cannot hold a TLV leaves the
+    # section walk where it started. Taken at face value the outer loop re-reads
+    # the same header forever, hanging tt-flash mid-flash behind the spinner.
+    payload = body_for("cmfw")
+    header = struct.pack(
+        "<IIHHI", MCUBOOT_IMAGE_MAGIC, 0, MCUBOOT_HDR_SIZE, 0, len(payload)
+    )
+    header += b"\x00" * (MCUBOOT_HDR_SIZE - len(header))
+
+    for claimed in (0, 1, 2, 3, MCUBOOT_TLV_INFO.size):
+        image = header + payload + struct.pack("<HH", TLV_INFO_MAGIC, claimed)
+        # No sha256 is reachable, so the image identifies as its own bytes.
+        assert boot_image_identity(image) == image
+
+
+def test_failover_protected_when_its_table_shares_a_write():
+    # The bundle emits each contiguous run of flash as one write, so the
+    # failover table is not guaranteed to start one. Matching it by write offset
+    # alone stops protecting the failover image the moment it doesn't, silently
+    # reopening the power-loss window this whole path exists to close.
+    chip = FakeChip(build_flash())
+    writes = build_image_writes()
+
+    failover_table = next(w for w in writes if w.offset == FAILOVER_HEAD)
+    writes.remove(failover_table)
+    # Prepend the security binary descriptor slot that sits right before it.
+    pre_addr = boot_fs.TT_BOOT_FS_SECURITY_BINARY_FD_ADDR
+    pre = bytearray(chip.spi_read(pre_addr, FAILOVER_HEAD - pre_addr))
+    writes.append(FlashWrite(pre_addr, pre + failover_table.write))
+    writes.sort(key=lambda w: w.offset)
+
+    result = full_plan(chip, writes)
+
+    assert not is_written(result, IMAGE_ADDRS["failover"]), "failover body rewritten"
+    assert not is_written(result, FAILOVER_HEAD), "failover table rewritten"
+
+
+def test_failover_lookup_ignores_a_zeroed_run_at_the_wrong_address():
+    # read_tag's addresses are buffer-relative for a write, so its blank-tag
+    # rule keys on the wrong bytes for any write not starting at flash 0. A
+    # zeroed run landing at that buffer offset must not be taken for the
+    # failover descriptor.
+    writes = build_image_writes()
+    stray = FlashWrite(0x100, bytearray(FAILOVER_HEAD + FD_SIZE))
+
+    found = _find_fd_in_writes(writes + [stray], "failover")
+
+    assert found is not None
+    write, offset, fd = found
+    assert write.offset + offset == FAILOVER_HEAD
+    assert fd.spi_addr == IMAGE_ADDRS["failover"]
