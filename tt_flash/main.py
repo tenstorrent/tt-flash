@@ -124,7 +124,10 @@ def parse_args():
         required=False,
     )
     flash.add_argument(
-        "--force", default=False, action="store_true", help="Force update the ROM"
+        "--force",
+        default=False,
+        action="store_true",
+        help="Force update the ROM, bypassing the version and board checks that would otherwise stop the flash. This does not rewrite the bootloader and recovery images; pass --update-boot-images as well to do that",
     )
     flash.add_argument(
         "--no-reset",
