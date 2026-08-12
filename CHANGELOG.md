@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `flash`: `--update-boot-images` writes the bundle's bootloader and recovery
+  images even when the board already holds the same ones, for provisioning and
+  board recovery.
+
+### Changed
+
+- `flash`: the boot-critical images (`cmfw`, `safeimg`, `safetail`, `failover`)
+  and the ROM and failover descriptor tables are now left alone when the board
+  already holds the same content, so a routine update no longer opens a
+  power-loss window on the path by which a board boots at all. Whether an image
+  is the same is decided by the SHA-256 and key hash that `imgtool` records in
+  it, because signing is not reproducible: two builds of the same source differ
+  only in the trailing signature. Pass `--update-boot-images` for the previous
+  behaviour of writing them unconditionally.
+
+### Fixed
+
+- `flash`: a P300 chip running recovery firmware publishes no board id, so the
+  pairing check filed it as not a P300, left its sibling alone in a group of
+  one, and dropped both halves of the card from the flash list -- refusing the
+  board because of the chip that most needed flashing. Such a chip is now
+  identified by its PCI subsystem id, which carries the same UPI whatever the
+  chip is running.
+- `boot_fs`: `tt_boot_fs_fd.image_tag_str()` compared each `c_uint8` tag byte
+  against the string `"\0"`, which never matched, so NUL padding was included in
+  the decoded tag. Tags shorter than 8 bytes (e.g. `cmfw`) now compare correctly.
+  This makes `read_tag` robust across the multi-table boot filesystem layout
+  (ROM, failover, and mutable descriptor tables).
+
 ## 3.4.0 - 30/07/25
 
 - Bump pyyaml 6.0.1 -> 6.0.2
