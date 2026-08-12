@@ -373,6 +373,40 @@ def _take_complement(pool: list[BhChip], chip: BhChip) -> Optional[BhChip]:
     return None
 
 
+def _adopt_recovery_chips(groups: list[list[BhChip]], pool: list[BhChip]) -> None:
+    """
+    Give each group that is short a chip the recovery chip belonging to it,
+    where the pool leaves only one possible answer.
+
+    A recovery chip publishes no board id, so the only thing placing it is the
+    ASIC location it fills. That is enough when one group is missing a location
+    and one chip in the pool sits there. It is not enough when two groups are
+    missing the same location: any assignment completes both, and a wrong one
+    reports a pair drawn from two different cards as a whole board, flashing
+    half of each while the card that is genuinely incomplete goes unreported.
+    Leave those groups alone and let them be reported as incomplete.
+    """
+    short_by_need: dict[int, list[list[BhChip]]] = defaultdict(list)
+    for chips in groups:
+        if len(chips) != 1:
+            continue
+        location = _asic_location(chips[0])
+        if location is not None:
+            short_by_need[1 - location].append(chips)
+
+    pool_by_location: dict[int, list[BhChip]] = defaultdict(list)
+    for chip in pool:
+        location = _asic_location(chip)
+        if location is not None:
+            pool_by_location[location].append(chip)
+
+    for need, candidates in short_by_need.items():
+        available = pool_by_location[need]
+        if len(candidates) == 1 and len(available) == 1:
+            candidates[0].append(available[0])
+            pool.remove(available[0])
+
+
 def validate_p300_can_be_flashed(
     devices: list[Union[WhChip, BhChip]],
 ) -> tuple[list[Union[WhChip, BhChip]], bool]:
@@ -416,25 +450,27 @@ def validate_p300_can_be_flashed(
             unidentified.append(dev)
 
     boards: list[tuple[Optional[int], list[BhChip]]] = []
+
+    _adopt_recovery_chips(list(p300_groups.values()), unidentified)
     for board_id, chips in p300_groups.items():
-        if len(chips) == 1 and unidentified:
-            sibling = _take_complement(unidentified, chips[0])
-            if sibling is not None:
-                chips.append(sibling)
         boards.append((board_id, chips))
 
     # Cards with neither chip able to name its board. The board id that would
     # group them is exactly what recovery firmware doesn't publish, so ASIC
-    # location is all there is to pair on.
+    # location is all there is to pair on. A chip nothing complements is set
+    # aside rather than ending the pass, so it cannot strand the chips behind
+    # it that would have paired.
+    unpairable: list[BhChip] = []
     while len(unidentified) >= 2:
         chip = unidentified.pop()
         sibling = _take_complement(unidentified, chip)
         if sibling is None:
-            unidentified.append(chip)
-            break
+            unpairable.append(chip)
+            continue
         boards.append((None, [chip, sibling]))
-    if unidentified:
-        boards.append((None, list(unidentified)))
+    unpairable.extend(unidentified)
+    if unpairable:
+        boards.append((None, unpairable))
 
     has_incomplete = False
 
