@@ -46,4 +46,4 @@ jobs:
 
       - name: Run hardware tests that don't perform flash
         run: |
-          pytest tests/ -v -m requires_hardware -m "not flash" --fwbundle tt-firmware/latest.fwbundle
+          pytest tests/ -v -m "requires_hardware and not flash" --fwbundle tt-firmware/latest.fwbundle
