@@ -52,4 +52,6 @@ jobs:
 
       - name: Run hardware tests that don't perform flash
         run: |
-          pytest tests/ -v -m "requires_hardware and not flash" --fwbundle "fw_pack-${FW_VERSION}.fwbundle"
+          pytest tests/ -v \
+            -m "requires_hardware and not flash and not shadow_flash" \
+            --fwbundle "fw_pack-${FW_VERSION}.fwbundle"
