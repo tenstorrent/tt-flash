@@ -13,6 +13,13 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  # Firmware comes from tt-system-firmware releases, which publish a combined
+  # fw_pack-<version>.fwbundle asset. The repo is public, so an unauthenticated
+  # download works and no cross-repo token is needed.
+  FW_REPO: tenstorrent/tt-system-firmware
+  FW_VERSION: "19.13.2"
+
 jobs:
   test-hardware-no-flash:
     name: Run Hardware Tests Without Flashing (${{ matrix.runner }})
@@ -28,12 +35,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          repository: tenstorrent/tt-firmware
-          path: tt-firmware
-
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -44,6 +45,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
+      - name: Download firmware bundle
+        run: |
+          curl -fsSL -O \
+            "https://github.com/${FW_REPO}/releases/download/v${FW_VERSION}/fw_pack-${FW_VERSION}.fwbundle"
+
       - name: Run hardware tests that don't perform flash
         run: |
-          pytest tests/ -v -m "requires_hardware and not flash" --fwbundle tt-firmware/latest.fwbundle
+          pytest tests/ -v -m "requires_hardware and not flash" --fwbundle "fw_pack-${FW_VERSION}.fwbundle"
