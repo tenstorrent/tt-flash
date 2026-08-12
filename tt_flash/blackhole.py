@@ -260,21 +260,27 @@ def _find_fd_in_writes(
     silently stop protecting the failover image the moment it didn't.
     """
     for write in writes:
-        found = boot_fs.read_tag(
-            lambda addr, size: write.write[addr : addr + size], tag
-        )
-        if found is not None:
-            return write, found[0], found[1]
-
         if tag == "failover":
+            # Asked by address alone, never by tag. read_tag's addresses are
+            # buffer-relative here, so its own blank-tag rule -- which keys on
+            # the flash address TT_BOOT_FS_FAILOVER_HEAD_ADDR -- lands on the
+            # wrong bytes for any write that doesn't start at flash 0, and would
+            # claim a zeroed run there as the failover descriptor.
             fd_offset = boot_fs.TT_BOOT_FS_FAILOVER_HEAD_ADDR - write.offset
             if fd_offset < 0:
                 continue
             fd = boot_fs.read_fd(
                 lambda addr, size: write.write[addr : addr + size], fd_offset
             )
-            if fd is not None and fd.flags.f.invalid == 0:
+            if fd is not None and fd.flags.f.invalid == 0 and fd.image_tag_str() == "":
                 return write, fd_offset, fd
+            continue
+
+        found = boot_fs.read_tag(
+            lambda addr, size: write.write[addr : addr + size], tag
+        )
+        if found is not None:
+            return write, found[0], found[1]
 
     return None
 
