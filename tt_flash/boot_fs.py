@@ -22,9 +22,17 @@ BOOT_FS_HEADER_MAGIC = 0x54544246  # 'TTBF' in ASCII, little-endian
 BOOT_FS_HEADER_VERSION = 1
 
 # Upper bounds when walking flash that may be corrupt. The per-table FD cap
-# matches the firmware's CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX default.
+# matches the firmware's CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX default, and applies
+# to tables whose extent isn't known; the fixed tables are bounded by what
+# follows them in flash instead. A pre-split flash keeps every image in the
+# table at 0x0, which can hold far more than the firmware default, so capping
+# that scan at the default would hide the tail of the table.
 MAX_TABLES = 16
 MAX_FDS_PER_TABLE = 32
+TABLE_REGION_END = {
+    TT_BOOT_FS_FD_HEAD_ADDR: TT_BOOT_FS_SECURITY_BINARY_FD_ADDR,
+    TT_BOOT_FS_FAILOVER_HEAD_ADDR: TT_BOOT_FS_SPI_RX_ADDR,
+}
 
 
 class ExtendedStructure(ctypes.Structure):
@@ -200,6 +208,19 @@ def find_descriptor_tables(reader: Callable[[int, int], bytes]) -> list:
     return table_addrs
 
 
+def table_fd_capacity(table_addr: int) -> int:
+    """
+    How many descriptors a table can hold before it runs into whatever follows
+    it in flash. Tables at an address with no known successor fall back to the
+    firmware's per-table default.
+    """
+    region_end = TABLE_REGION_END.get(table_addr)
+    if region_end is None or region_end <= table_addr:
+        return MAX_FDS_PER_TABLE
+
+    return (region_end - table_addr) // ctypes.sizeof(tt_boot_fs_fd)
+
+
 def read_tag(
     reader: Callable[[int, int], bytes], tag: str
 ) -> Optional[Tuple[int, tt_boot_fs_fd]]:
@@ -220,7 +241,7 @@ def read_tag(
     """
     for table_addr in find_descriptor_tables(reader):
         curr_addr = table_addr
-        for _ in range(MAX_FDS_PER_TABLE):
+        for _ in range(table_fd_capacity(table_addr)):
             fd = read_fd(reader, curr_addr)
 
             if fd is None or fd.flags.f.invalid != 0:
