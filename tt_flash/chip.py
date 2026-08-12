@@ -121,10 +121,12 @@ class TTChip:
         self.fw_defines = init_fw_defines(self)
 
         self.telmetry_cache = None
+        self.board_id_cache = None
 
     def reinit(self, callback=None):
         self.luwen_chip = PciChip(self.interface_id)
         self.telmetry_cache = None
+        self.board_id_cache = None
 
         chip_count = 0
         block_count = 0
@@ -206,7 +208,14 @@ class TTChip:
         return self.luwen_chip.pci_board_type()
 
     def board_id(self) -> int:
-        return PciChip(self.interface_id).board_id()
+        # Opening the PCI device again is what makes this readable on a chip
+        # whose firmware isn't answering, so the result is cached: callers ask
+        # more than once per chip, and two reads that disagree would be worse
+        # than one that is merely stale.
+        if self.board_id_cache is None:
+            self.board_id_cache = PciChip(self.interface_id).board_id()
+
+        return self.board_id_cache
 
     def axi_write32(self, addr: int, value: int):
         self.luwen_chip.axi_write32(addr, value)
