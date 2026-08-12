@@ -199,6 +199,13 @@ def boot_image_identity(image: bytes) -> bytes:
         if info_magic not in MCUBOOT_TLV_INFO_MAGICS:
             break
 
+        if info_size <= MCUBOOT_TLV_INFO.size:
+            # A section that doesn't extend past its own info header carries no
+            # TLVs and, taken at face value, would leave offset where it is.
+            # Truncated or zeroed TLV areas reach here, so stop rather than
+            # re-read the same header forever.
+            break
+
         section_end = min(offset + info_size, len(image))
         pos = offset + MCUBOOT_TLV_INFO.size
         while pos + MCUBOOT_TLV.size <= section_end:
