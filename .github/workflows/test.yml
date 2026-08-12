@@ -19,6 +19,10 @@ env:
   # download works and no cross-repo token is needed.
   FW_REPO: tenstorrent/tt-system-firmware
   FW_VERSION: "19.13.2"
+  # Older bundle for the cross-major upgrade test. 18.x images are a single
+  # blob at offset 0 with boardcfg at 0xfff000, so upgrading to a 19.x image
+  # exercises the boardcfg relocation to 0xd4000.
+  FW_PREV_VERSION: "18.5.1"
 
 jobs:
   test-hardware-no-flash:
@@ -55,3 +59,44 @@ jobs:
           pytest tests/ -v \
             -m "requires_hardware and not flash and not shadow_flash" \
             --fwbundle "fw_pack-${FW_VERSION}.fwbundle"
+
+  test-shadow-flash:
+    name: Run Shadow Flash Tests (${{ matrix.runner }})
+    # Temporarily disabled. Re-enable by removing this `if`.
+    if: false
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          # Blackhole only: the shadow scaffolding is BH-specific.
+          - tt-ubuntu-2204-p150b-stable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Download firmware bundles
+        run: |
+          for version in "${FW_VERSION}" "${FW_PREV_VERSION}"; do
+            curl -fsSL -O \
+              "https://github.com/${FW_REPO}/releases/download/v${version}/fw_pack-${version}.fwbundle"
+          done
+
+      # These write real bytes to SPI, but only into a scratch window well above
+      # the firmware layout -- see tests/bh_shadow.py.
+      - name: Run shadow flash tests
+        run: |
+          pytest tests/ -v -m shadow_flash \
+            --fwbundle "fw_pack-${FW_VERSION}.fwbundle" \
+            --fwbundle-prev "fw_pack-${FW_PREV_VERSION}.fwbundle"
