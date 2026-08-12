@@ -253,8 +253,11 @@ def _find_fd_in_writes(
 
     The failover descriptor has a blank on-disk image_tag (the SMC ROM
     identifies it by its fixed address, not by tag), so the by-tag scan cannot
-    find it. Match it by write offset instead: a write whose offset equals
-    TT_BOOT_FS_FAILOVER_HEAD_ADDR starts with the failover descriptor.
+    find it. Match it by flash address instead, looking for the write that
+    *contains* TT_BOOT_FS_FAILOVER_HEAD_ADDR rather than one that starts there:
+    the bundle emits each contiguous run of flash as a single write, so the
+    failover table need not begin one, and matching on offset alone would
+    silently stop protecting the failover image the moment it didn't.
     """
     for write in writes:
         found = boot_fs.read_tag(
@@ -263,12 +266,15 @@ def _find_fd_in_writes(
         if found is not None:
             return write, found[0], found[1]
 
-        if tag == "failover" and write.offset == boot_fs.TT_BOOT_FS_FAILOVER_HEAD_ADDR:
+        if tag == "failover":
+            fd_offset = boot_fs.TT_BOOT_FS_FAILOVER_HEAD_ADDR - write.offset
+            if fd_offset < 0:
+                continue
             fd = boot_fs.read_fd(
-                lambda addr, size: write.write[addr : addr + size], 0
+                lambda addr, size: write.write[addr : addr + size], fd_offset
             )
             if fd is not None and fd.flags.f.invalid == 0:
-                return write, 0, fd
+                return write, fd_offset, fd
 
     return None
 
@@ -419,6 +425,20 @@ STATIC_REGION_ADDRS = (
 )
 
 
+def _covers_static_region(write: FlashWrite) -> bool:
+    """
+    Whether a write lands on one of the fixed regions.
+
+    Containment, not equality: a static region is not guaranteed to start a
+    write of its own, and a write that carries one along with its neighbours
+    still erases that region's sector. Such a write is skipped only when all of
+    its bytes are already on flash, so covering more than the region itself
+    costs nothing but the comparison.
+    """
+    end = write.offset + len(write.write)
+    return any(write.offset <= addr < end for addr in STATIC_REGION_ADDRS)
+
+
 def skip_unchanged_static_regions(
     chip: BhChip, writes: list[FlashWrite], update_boot_images: bool = False
 ) -> list[FlashWrite]:
@@ -436,7 +456,7 @@ def skip_unchanged_static_regions(
 
     kept = []
     for write in writes:
-        if write.offset in STATIC_REGION_ADDRS:
+        if _covers_static_region(write):
             resident = chip.spi_read(write.offset, len(write.write))
             if resident == bytes(write.write):
                 continue
