@@ -379,12 +379,19 @@ def _adopt_recovery_chips(groups: list[list[BhChip]], pool: list[BhChip]) -> Non
     where the pool leaves only one possible answer.
 
     A recovery chip publishes no board id, so the only thing placing it is the
-    ASIC location it fills. That is enough when one group is missing a location
-    and one chip in the pool sits there. It is not enough when two groups are
-    missing the same location: any assignment completes both, and a wrong one
-    reports a pair drawn from two different cards as a whole board, flashing
-    half of each while the card that is genuinely incomplete goes unreported.
-    Leave those groups alone and let them be reported as incomplete.
+    ASIC location it fills. Two things make that ambiguous, and either one means
+    leaving the group short and letting it be reported as incomplete.
+
+    Two groups missing the same location: any assignment completes both, and a
+    wrong one reports a pair drawn from two different cards as a whole board,
+    flashing half of each while the card that is genuinely incomplete goes
+    unreported.
+
+    A candidate whose own complement is sitting unclaimed in the pool: those two
+    are a card in their own right, and taking one of them would flash a
+    half-populated card while breaking up a whole one. A complement that another
+    short group is waiting for is not unclaimed, which is what still lets two
+    cards that are each half in recovery resolve.
     """
     short_by_need: dict[int, list[list[BhChip]]] = defaultdict(list)
     for chips in groups:
@@ -400,9 +407,11 @@ def _adopt_recovery_chips(groups: list[list[BhChip]], pool: list[BhChip]) -> Non
         if location is not None:
             pool_by_location[location].append(chip)
 
-    for need, candidates in short_by_need.items():
+    for need in (0, 1):
+        candidates = short_by_need[need]
         available = pool_by_location[need]
-        if len(candidates) == 1 and len(available) == 1:
+        unclaimed = len(pool_by_location[1 - need]) - len(short_by_need[1 - need])
+        if len(candidates) == 1 and len(available) == 1 and unclaimed <= 0:
             candidates[0].append(available[0])
             pool.remove(available[0])
 

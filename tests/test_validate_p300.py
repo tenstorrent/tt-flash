@@ -208,6 +208,23 @@ class TestValidateP300:
         assert incomplete
         assert len(valid) == 0
 
+    def test_whole_recovery_card_is_not_broken_up_to_complete_another(self):
+        """
+        A card with both halves in recovery sitting alongside a genuinely
+        half-populated card. Taking one recovery chip completes the card that
+        is missing hardware and strands the other half of the card that is all
+        there, so the two recovery chips stay together.
+        """
+        half_populated = FakeTTChip(make_board_id(serial=0x1), 0)
+        recovery = [FakeTTChip(0x0, 0, 0x45), FakeTTChip(0x0, 1, 0x45)]
+
+        valid, incomplete = validate_p300_can_be_flashed(
+            [half_populated, *recovery]
+        )
+
+        assert incomplete, "the half-populated card should be reported"
+        assert sorted(id(c) for c in valid) == sorted(id(c) for c in recovery)
+
     def test_chip_in_recovery_alone(self):
         """A lone recovery chip is still half a card, so it is excluded."""
         valid, incomplete = validate_p300_can_be_flashed([FakeTTChip(0x0, 0, 0x45)])

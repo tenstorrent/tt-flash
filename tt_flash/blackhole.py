@@ -272,7 +272,10 @@ def _find_fd_in_writes(
             fd = boot_fs.read_fd(
                 lambda addr, size: write.write[addr : addr + size], fd_offset
             )
-            if fd is not None and fd.flags.f.invalid == 0 and fd.image_tag_str() == "":
+            if fd is not None and fd.flags.f.invalid == 0 and fd.image_tag_str() in (
+                "",
+                "failover",
+            ):
                 return write, fd_offset, fd
             continue
 
