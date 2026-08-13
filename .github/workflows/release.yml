@@ -13,6 +13,15 @@ on:
           - patch
           - minor
           - major
+          - none
+      channel:
+        description: 'Release channel'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - prerelease
   workflow_call:
 
 env:
@@ -79,8 +88,6 @@ jobs:
       version_minor: ${{ steps.version.outputs.minor }}
       version_patch: ${{ steps.version.outputs.patch }}
       version_prerelease: ${{ steps.version.outputs.prerelease }}
-      version_build: ${{ steps.version.outputs.build }}
-      version_full: ${{ steps.version.outputs.full }}
       number_of_commits_since_tag: ${{ steps.num-commits-since-tag.outputs.num_commits_since_tag }}
     steps:
       - uses: actions/checkout@v4
@@ -113,27 +120,62 @@ jobs:
           echo "package_name=${package_name}"
           echo "package_name=${package_name}" >> "$GITHUB_OUTPUT"
       - name: Bump the version
+        id: new-package-version
         run: |
           . ./venv/bin/activate
           pip install bump2version
-          bump2version \
-            --current-version ${{ steps.packagever.outputs.package_version }} \
-            ${{ github.event.inputs.version_bump_type }} pyproject.toml
-      - name: What NEW Version?
-        id: new-package-version
-        run: |
-          python3 -m venv venv
-          . ./venv/bin/activate
-          pip install --upgrade pip
-          pip install toml-cli
-          export package_version_new="$( toml get project.version --toml-path pyproject.toml )"
+
+          package_version_old="${{ steps.packagever.outputs.package_version }}"
+          current="${package_version_old}"
+
+          # A part other than "none" starts a new version, which .bumpversion.cfg
+          # opens as a release candidate. "none" acts on the candidate that is
+          # already open instead.
+          if [ "${BUMP}" != "none" ]; then
+            bump2version --current-version "${current}" --allow-dirty "${BUMP}"
+            current="$( toml get project.version --toml-path pyproject.toml )"
+          fi
+
+          # A stable release then closes whatever candidate is open, which is
+          # what turns 3.11.0-rc.1 into 3.11.0. Bumping "release" on a version
+          # that has no candidate open fails loudly, which is what we want.
+          if [ "${CHANNEL}" = "stable" ]; then
+            bump2version --current-version "${current}" --allow-dirty release
+          elif [ "${BUMP}" = "none" ]; then
+            bump2version --current-version "${current}" --allow-dirty rc
+          fi
+
+          package_version_new="$( toml get project.version --toml-path pyproject.toml )"
+
+          # Bumping "rc" on a version with no candidate open is a silent no-op,
+          # so catch it here rather than tagging and publishing a version that
+          # already exists.
+          if [ "${package_version_new}" = "${package_version_old}" ]; then
+            echo "error: ${package_version_old} is unchanged; nothing to release" >&2
+            exit 1
+          fi
+
           echo "package_version_new=${package_version_new}"
           echo "package_version_new=${package_version_new}" >> "$GITHUB_OUTPUT"
+        env:
+          BUMP: ${{ github.event.inputs.version_bump_type }}
+          CHANNEL: ${{ github.event.inputs.channel }}
       - name: Parse version from string
         id: version
-        uses: release-kit/semver@v2
-        with:
-          string: ${{ steps.new-package-version.outputs.package_version_new }}
+        run: |
+          # The parts the changelog and the release flag need, split out of the
+          # version we just computed so that one step decides what it is.
+          version="${{ steps.new-package-version.outputs.package_version_new }}"
+          base="${version%%-*}"
+          echo "major=${base%%.*}" >> "$GITHUB_OUTPUT"
+          echo "patch=${base##*.}" >> "$GITHUB_OUTPUT"
+          minor="${base#*.}"
+          echo "minor=${minor%%.*}" >> "$GITHUB_OUTPUT"
+          if [ "${version}" = "${base}" ]; then
+            echo "prerelease=" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=${version#*-}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Find number of commits since last tag
         id: num-commits-since-tag
         run: |
@@ -344,7 +386,7 @@ jobs:
             ${{ github.workspace }}/tt-flash-*-ubuntu-*/tt-flash-*-ubuntu-*
           body: ${{ steps.build_changelog.outputs.changelog }}
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.versionchange.outputs.version_prerelease != '' }}
 
   ###
   # Merge back
