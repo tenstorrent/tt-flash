@@ -1,3 +1,31 @@
+tt-flash (3.11.0) noble; urgency=medium
+
+  [ Andrew Lewycky ]
+  * Bump pyluwen to 0.9.0
+
+  [ Alex Apostolu ]
+  * static_fw_table: support the split ROM and mutable descriptor tables
+  * static_fw_table: cover the descriptor scan, the boot images and P300
+  * static_fw_table: document --update-boot-images and the tag fix
+
+  [ Zakhary Kaplan ]
+  * blackhole: stop boot_image_identity spinning on a zero-size TLV section
+  * chip: pair recovery P300 chips by complementary ASIC location
+  * main: say what --force does not cover
+  * boot_fs: bound the descriptor scan by the table's region, not a flat cap
+  * chip: cache board_id instead of reopening the PCI device per call
+  * blackhole: match the failover table by containment, not by write offset
+  * chip: don't let one unpairable chip strand the rest of the pool
+  * blackhole: identify the failover slot by address only
+  * tests: cover the fixes that the fixtures could not see
+  * chip: don't break up a whole recovery card to complete a half-populated one
+  * release: support release candidates
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 3.11.0-rc.1
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 14 Aug 2026 15:52:37 +0000
+
 tt-flash (3.10.0) noble; urgency=medium
 
   [ Alex Apostolu ]
