@@ -10,6 +10,7 @@ Usage:
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 import pytest
 
@@ -26,9 +27,17 @@ class FakeTTChip:
     """Stand-in for TTChip with only the methods used in validate_p300_can_be_flashed."""
     _board_id: int
     _asic_location: int
+    # UPI as it appears in the PCI subsystem id. A chip running recovery FW has
+    # a board_id of 0 and can only be identified through this.
+    _pci_board_type: Optional[int] = None
 
     def board_id(self) -> int:
         return self._board_id
+
+    def board_type(self) -> int:
+        if self._pci_board_type is None:
+            raise RuntimeError("Could not get PCI interface for this chip.")
+        return self._pci_board_type
 
     def get_asic_location(self) -> int:
         return self._asic_location
@@ -111,6 +120,143 @@ class TestValidateP300:
         """Three chips sharing a board_id should be rejected."""
         board_id = make_board_id()
         chips = [FakeTTChip(board_id, 0), FakeTTChip(board_id, 1), FakeTTChip(board_id, 0)]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert incomplete
+        assert len(valid) == 0
+
+    def test_chip_in_recovery_pairs_with_its_sibling(self):
+        """
+        A chip running recovery FW reports no board id, so it can only be
+        placed on the card whose other half is looking for it.
+        """
+        board_id = make_board_id()
+        healthy = FakeTTChip(board_id, 1)
+        recovery = FakeTTChip(0x0, 0, _pci_board_type=0x45)
+
+        valid, incomplete = validate_p300_can_be_flashed([healthy, recovery])
+
+        assert not incomplete
+        assert valid == [healthy, recovery]
+
+    def test_both_chips_in_recovery(self):
+        """Neither chip can name its board, but the pair is still complete."""
+        chips = [FakeTTChip(0x0, 0, 0x45), FakeTTChip(0x0, 1, 0x45)]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert not incomplete
+        assert len(valid) == 2
+
+    def test_two_cards_each_half_in_recovery(self):
+        """
+        Two cards, each with one half in recovery, must not be cross-paired.
+        Pairing on anything but ASIC location produces two same-location pairs,
+        both of which are then rejected, leaving all four chips unflashed.
+        """
+        a = make_board_id(serial=0xA)
+        b = make_board_id(serial=0xB)
+        chips = [
+            FakeTTChip(a, 0),
+            FakeTTChip(0x0, 1, 0x45),
+            FakeTTChip(0x0, 0, 0x45),
+            FakeTTChip(b, 1),
+        ]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert not incomplete
+        assert len(valid) == 4
+
+    def test_unreadable_location_does_not_strand_pairable_chips(self):
+        """
+        A recovery chip whose ASIC location cannot be read is set aside, not
+        treated as the end of the pairing pass. Ending the pass there would
+        leave the chips behind it unpaired and so unflashed, on an ordering
+        that says nothing about the hardware.
+        """
+        class UnreadableLocation(FakeTTChip):
+            def get_asic_location(self) -> int:
+                raise RuntimeError("no telemetry")
+
+        pairable = [FakeTTChip(0x0, 0, 0x45), FakeTTChip(0x0, 1, 0x45)]
+        unreadable = UnreadableLocation(0x0, 0, 0x45)
+
+        for chips in ([*pairable, unreadable], [unreadable, *pairable]):
+            valid, incomplete = validate_p300_can_be_flashed(chips)
+
+            assert incomplete, "the unpairable chip should still be reported"
+            assert sorted(id(c) for c in valid) == sorted(id(c) for c in pairable)
+
+    def test_ambiguous_recovery_chip_is_not_adopted(self):
+        """
+        With two cards each missing a half, nothing says which one a lone
+        recovery chip belongs to. Guessing reports a pair drawn from two
+        different cards as complete, so no adoption happens at all.
+        """
+        a = make_board_id(serial=0xA)
+        b = make_board_id(serial=0xB)
+        chips = [
+            FakeTTChip(a, 0),
+            FakeTTChip(b, 0),
+            FakeTTChip(0x0, 1, 0x45),
+        ]
+
+        valid, incomplete = validate_p300_can_be_flashed(chips)
+
+        assert incomplete
+        assert len(valid) == 0
+
+    def test_whole_recovery_card_is_not_broken_up_to_complete_another(self):
+        """
+        A card with both halves in recovery sitting alongside a genuinely
+        half-populated card. Taking one recovery chip completes the card that
+        is missing hardware and strands the other half of the card that is all
+        there, so the two recovery chips stay together.
+        """
+        half_populated = FakeTTChip(make_board_id(serial=0x1), 0)
+        recovery = [FakeTTChip(0x0, 0, 0x45), FakeTTChip(0x0, 1, 0x45)]
+
+        valid, incomplete = validate_p300_can_be_flashed(
+            [half_populated, *recovery]
+        )
+
+        assert incomplete, "the half-populated card should be reported"
+        assert sorted(id(c) for c in valid) == sorted(id(c) for c in recovery)
+
+    def test_chip_in_recovery_alone(self):
+        """A lone recovery chip is still half a card, so it is excluded."""
+        valid, incomplete = validate_p300_can_be_flashed([FakeTTChip(0x0, 0, 0x45)])
+
+        assert incomplete
+        assert len(valid) == 0
+
+    def test_non_p300_in_recovery(self):
+        """Boards without a second chip are not subject to the pairing check."""
+        valid, incomplete = validate_p300_can_be_flashed([FakeTTChip(0x0, 0, 0x40)])
+
+        assert not incomplete
+        assert len(valid) == 1
+
+    def test_unidentifiable_chip(self):
+        """
+        A chip that answers neither way is passed through, leaving the flash
+        path to report that it does not recognize the board.
+        """
+        valid, incomplete = validate_p300_can_be_flashed([FakeTTChip(0x0, 0)])
+
+        assert not incomplete
+        assert len(valid) == 1
+
+    def test_asic_location_cannot_be_read(self):
+        """An unreadable ASIC location excludes the board instead of raising."""
+        class UnreadableLocation(FakeTTChip):
+            def get_asic_location(self) -> int:
+                raise RuntimeError("no telemetry")
+
+        board_id = make_board_id()
+        chips = [FakeTTChip(board_id, 0), UnreadableLocation(board_id, 1)]
 
         valid, incomplete = validate_p300_can_be_flashed(chips)
 

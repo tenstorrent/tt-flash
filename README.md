@@ -83,7 +83,7 @@ command:
 ```
 $ tt-flash flash -h
 
-usage: tt-flash flash [-h] [--sys-config SYS_CONFIG] [--fw-tar FW_TAR] [--skip-missing-fw] [--force] [--no-reset] [fwbundle]
+usage: tt-flash flash [-h] [--sys-config SYS_CONFIG] [--fw-tar FW_TAR] [--skip-missing-fw] [--force] [--no-reset] [--allow-major-downgrades] [--update-boot-images] [fwbundle]
 
 positional arguments:
   fwbundle              Path to the firmware bundle
@@ -96,6 +96,9 @@ options:
   --skip-missing-fw     If the fw packages doesn't contain the fw for a detected board, continue flashing
   --force               Force update the ROM
   --no-reset            Do not reset devices at the end of flash
+  --allow-major-downgrades
+                        Allow major version downgrades
+  --update-boot-images  Write the bundle's bootloader and recovery images even if the board already holds the same ones. They are left alone by default so that a power loss during an update cannot corrupt the board's boot path
 ```
 
 ## Typical usage

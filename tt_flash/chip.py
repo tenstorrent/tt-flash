@@ -121,10 +121,12 @@ class TTChip:
         self.fw_defines = init_fw_defines(self)
 
         self.telmetry_cache = None
+        self.board_id_cache = None
 
     def reinit(self, callback=None):
         self.luwen_chip = PciChip(self.interface_id)
         self.telmetry_cache = None
+        self.board_id_cache = None
 
         chip_count = 0
         block_count = 0
@@ -206,7 +208,14 @@ class TTChip:
         return self.luwen_chip.pci_board_type()
 
     def board_id(self) -> int:
-        return PciChip(self.interface_id).board_id()
+        # Opening the PCI device again is what makes this readable on a chip
+        # whose firmware isn't answering, so the result is cached: callers ask
+        # more than once per chip, and two reads that disagree would be worse
+        # than one that is merely stale.
+        if self.board_id_cache is None:
+            self.board_id_cache = PciChip(self.interface_id).board_id()
+
+        return self.board_id_cache
 
     def axi_write32(self, addr: int, value: int):
         self.luwen_chip.axi_write32(addr, value)
@@ -311,6 +320,102 @@ class WhChip(TTChip):
         return get_bundle_version_v1(self)
 
 
+def resolve_board_type(dev: Union[WhChip, BhChip]) -> Optional[str]:
+    """
+    Board type of a chip, or None if nothing on the chip identifies it.
+
+    A chip running recovery firmware publishes no board id: board_id() either
+    raises or reads back as 0, which get_board_type does not recognize. Ask the
+    PCI device in that case. Its subsystem id carries the same UPI and does not
+    depend on what the chip is running.
+    """
+    try:
+        board_type = get_board_type(dev.board_id())
+    except Exception:
+        board_type = None
+
+    if board_type is None:
+        try:
+            board_type = get_board_type(dev.board_type(), from_type=True)
+        except Exception:
+            board_type = None
+
+    return board_type
+
+
+def _asic_location(chip: BhChip) -> Optional[int]:
+    """
+    ASIC location of a chip, or None if it cannot be read.
+    """
+    try:
+        return chip.get_asic_location()
+    except Exception:
+        return None
+
+
+def _take_complement(pool: list[BhChip], chip: BhChip) -> Optional[BhChip]:
+    """
+    Remove and return the chip in pool that sits at the other ASIC location on
+    a card, or None when nothing in pool complements chip.
+
+    A P300 holds one ASIC at location 0 and one at location 1, so the only
+    chip in the pool that can be chip's sibling is one reporting the other
+    location. Any other choice pairs chips from different cards.
+    """
+    location = _asic_location(chip)
+    if location is None:
+        return None
+
+    for i, candidate in enumerate(pool):
+        if _asic_location(candidate) == 1 - location:
+            return pool.pop(i)
+
+    return None
+
+
+def _adopt_recovery_chips(groups: list[list[BhChip]], pool: list[BhChip]) -> None:
+    """
+    Give each group that is short a chip the recovery chip belonging to it,
+    where the pool leaves only one possible answer.
+
+    A recovery chip publishes no board id, so the only thing placing it is the
+    ASIC location it fills. Two things make that ambiguous, and either one means
+    leaving the group short and letting it be reported as incomplete.
+
+    Two groups missing the same location: any assignment completes both, and a
+    wrong one reports a pair drawn from two different cards as a whole board,
+    flashing half of each while the card that is genuinely incomplete goes
+    unreported.
+
+    A candidate whose own complement is sitting unclaimed in the pool: those two
+    are a card in their own right, and taking one of them would flash a
+    half-populated card while breaking up a whole one. A complement that another
+    short group is waiting for is not unclaimed, which is what still lets two
+    cards that are each half in recovery resolve.
+    """
+    short_by_need: dict[int, list[list[BhChip]]] = defaultdict(list)
+    for chips in groups:
+        if len(chips) != 1:
+            continue
+        location = _asic_location(chips[0])
+        if location is not None:
+            short_by_need[1 - location].append(chips)
+
+    pool_by_location: dict[int, list[BhChip]] = defaultdict(list)
+    for chip in pool:
+        location = _asic_location(chip)
+        if location is not None:
+            pool_by_location[location].append(chip)
+
+    for need in (0, 1):
+        candidates = short_by_need[need]
+        available = pool_by_location[need]
+        unclaimed = len(pool_by_location[1 - need]) - len(short_by_need[1 - need])
+        if len(candidates) == 1 and len(available) == 1 and unclaimed <= 0:
+            candidates[0].append(available[0])
+            pool.remove(available[0])
+
+
 def validate_p300_can_be_flashed(
     devices: list[Union[WhChip, BhChip]],
 ) -> tuple[list[Union[WhChip, BhChip]], bool]:
@@ -320,50 +425,99 @@ def validate_p300_can_be_flashed(
 
     Groups P300 chips by board_id (assuming unique board IDs per card in a production context)
 
+    A chip running recovery firmware reports no board id and so cannot be
+    grouped that way. It is still a chip that needs flashing -- that is how a
+    board gets out of recovery -- so pair it with a group that is missing one,
+    rather than leaving both halves of the card unflashed. Only a chip at the
+    other ASIC location can be that sibling; see _take_complement.
+
     Also verifies that the P300 board has exactly 1 chip with asic_location = 0 and exactly
     1 chip with asic_location = 1
 
     Returns (filtered_devices, has_incomplete_p300)
     """
     p300_groups: dict[int, list[BhChip]] = defaultdict(list)
+    unidentified: list[BhChip] = []
     valid_devices: list[Union[WhChip, BhChip]] = []
 
     for dev in devices:
-        try:
-            board_id = dev.board_id()
-            board_type = get_board_type(board_id)
-        except Exception:
-            board_type = None
+        board_type = resolve_board_type(dev)
 
-        if board_type and "P300" in board_type:
-            p300_groups[board_id].append(dev)
-        else:
+        if not (board_type and "P300" in board_type):
             # only checking p300 validity so add all other devices to valid_devices
             valid_devices.append(dev)
+            continue
+
+        try:
+            board_id = dev.board_id()
+        except Exception:
+            board_id = 0
+
+        if board_id:
+            p300_groups[board_id].append(dev)
+        else:
+            unidentified.append(dev)
+
+    boards: list[tuple[Optional[int], list[BhChip]]] = []
+
+    _adopt_recovery_chips(list(p300_groups.values()), unidentified)
+    for board_id, chips in p300_groups.items():
+        boards.append((board_id, chips))
+
+    # Cards with neither chip able to name its board. The board id that would
+    # group them is exactly what recovery firmware doesn't publish, so ASIC
+    # location is all there is to pair on. A chip nothing complements is set
+    # aside rather than ending the pass, so it cannot strand the chips behind
+    # it that would have paired.
+    unpairable: list[BhChip] = []
+    while len(unidentified) >= 2:
+        chip = unidentified.pop()
+        sibling = _take_complement(unidentified, chip)
+        if sibling is None:
+            unpairable.append(chip)
+            continue
+        boards.append((None, [chip, sibling]))
+    unpairable.extend(unidentified)
+    if unpairable:
+        boards.append((None, unpairable))
 
     has_incomplete = False
 
-    for board_id, chips in p300_groups.items():
-        # Has 2 chips, but verify that ASIC locations are expected
-        if len(chips) == 2:
-            locations = {c.get_asic_location() for c in chips}
-            if locations == {0, 1}:
-                valid_devices.extend(chips)
-            else:
-                has_incomplete = True
-                print(
-                    CConfig.COLOR.RED,
-                    f"\tError: P300 board (board_id: {board_id:#x}) has 2 chips but both report ",
-                    f"the same ASIC location. Skipping flash for this board.",
-                    CConfig.COLOR.ENDC
-                )
+    for board_id, chips in boards:
+        board = f"board_id: {board_id:#x}" if board_id is not None else "no board id"
+
         # Doesn't have 2 chips
+        if len(chips) != 2:
+            has_incomplete = True
+            print(
+                CConfig.COLOR.RED,
+                f"\tError: P300 board ({board}) has {len(chips)} chip(s) detected,",
+                f"expected 2. Skipping flash for this board.",
+                CConfig.COLOR.ENDC
+            )
+            continue
+
+        # Has 2 chips, but verify that ASIC locations are expected
+        try:
+            locations = {c.get_asic_location() for c in chips}
+        except Exception as e:
+            has_incomplete = True
+            print(
+                CConfig.COLOR.RED,
+                f"\tError: P300 board ({board}) has 2 chips but their ASIC ",
+                f"locations could not be read ({e}). Skipping flash for this board.",
+                CConfig.COLOR.ENDC
+            )
+            continue
+
+        if locations == {0, 1}:
+            valid_devices.extend(chips)
         else:
             has_incomplete = True
             print(
                 CConfig.COLOR.RED,
-                f"\tError: P300 board (board_id: {board_id:#x}) has {len(chips)} chip(s) detected,",
-                f"expected 2. Skipping flash for this board.",
+                f"\tError: P300 board ({board}) has 2 chips but both report ",
+                f"the same ASIC location. Skipping flash for this board.",
                 CConfig.COLOR.ENDC
             )
 

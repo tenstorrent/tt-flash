@@ -124,7 +124,10 @@ def parse_args():
         required=False,
     )
     flash.add_argument(
-        "--force", default=False, action="store_true", help="Force update the ROM"
+        "--force",
+        default=False,
+        action="store_true",
+        help="Force update the ROM, bypassing the version and board checks that would otherwise stop the flash. This does not rewrite the bootloader and recovery images; pass --update-boot-images as well to do that",
     )
     flash.add_argument(
         "--no-reset",
@@ -134,6 +137,12 @@ def parse_args():
     )
     flash.add_argument(
         "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
+    )
+    flash.add_argument(
+        "--update-boot-images",
+        default=False,
+        action="store_true",
+        help="Write the bundle's bootloader and recovery images even if the board already holds the same ones. They are left alone by default so that a power loss during an update cannot corrupt the board's boot path",
     )
 
     verify = subparsers.add_parser(
@@ -292,7 +301,7 @@ def main():
             try:
                 # Run flash operations
                 flash_chip_args = [
-                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw)
+                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images)
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init) as p:

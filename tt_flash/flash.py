@@ -13,9 +13,9 @@ import random
 
 from tt_flash.blackhole import boot_fs_write, parse_writes_from_image
 from tt_flash.blackhole import FlashWrite
-from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips
+from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips, resolve_board_type
 from tt_flash.error import TTError
-from tt_flash.utility import change_to_public_name, get_board_type, CConfig
+from tt_flash.utility import change_to_public_name, CConfig
 from tt_flash.wormhole import (
     check_wh_can_reset,
     nebula_x2_post_flash,
@@ -107,6 +107,7 @@ def flash_chip_stage1(
     force: bool,
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
+    update_boot_images: bool = False,
 ) -> FlashStageResult:
     """
     Check the chip and determine if it is a candidate to be flashed.
@@ -279,7 +280,9 @@ def flash_chip_stage1(
 
     if isinstance(chip, BhChip):
         writes = parse_writes_from_image(image)
-        writes = boot_fs_write(chip, boardname_to_display, mask, writes)
+        writes = boot_fs_write(
+            chip, boardname_to_display, mask, writes, update_boot_images
+        )
     else:
         writes = parse_wh_image(chip, boardname_to_display, image, mask)
 
@@ -541,6 +544,7 @@ def flash_chip(
     force: bool,
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
+    update_boot_images: bool = False,
 ) -> FlashResult:
     """
     Flash firmware to a single chip. This function is process-safe and is intended to be called by
@@ -565,16 +569,9 @@ def flash_chip(
     # Reopen the tarfile in this process
     fw_package = tarfile.open(fwbundle, "r")
 
-    try:
-        boardname = get_board_type(pci_chip.board_id())
-    except:
-        # This exception can be thrown if board is running recovery FW.
-        # Fallback to a different detection method.
-        try:
-            boardname = get_board_type(dev.board_type(), from_type=True)
-        except:
-            boardname = None
-
+    # Falls back to the PCI subsystem id when the chip cannot name its own
+    # board, which is the case while it runs recovery FW.
+    boardname = resolve_board_type(dev)
 
     if boardname is None:
         raise TTError(f"Did not recognize board type for {dev}")
@@ -582,9 +579,10 @@ def flash_chip(
     # For p300 we need to check if its L or R chip
     if "P300" in boardname:
         # 0 = Right, 1 = Left
-        if dev.get_asic_location() == 0:
+        location = dev.get_asic_location()
+        if location == 0:
             boardname = f"{boardname}_right"
-        elif dev.get_asic_location() == 1:
+        elif location == 1:
             boardname = f"{boardname}_left"
 
     debug_messages.append(
@@ -609,6 +607,7 @@ def flash_chip(
         force,
         allow_major_downgrades,
         skip_missing_fw=skip_missing_fw,
+        update_boot_images=update_boot_images,
     )
 
     if result.state == FlashStageResultState.Err:
