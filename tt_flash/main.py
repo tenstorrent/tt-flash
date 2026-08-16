@@ -31,6 +31,7 @@ from tt_flash.flash import (
     flash_chip,
     post_flash_check,
     reset_devices,
+    verify_chip,
     verify_package,
 )
 
@@ -200,8 +201,20 @@ def parse_args():
     # Parse the args with the default behaviour
     args = parser.parse_args(args=cmd_args)
 
-    # One of fwbundle, --fw-tar, or --download is required (mutual exclusion handled by argparse group)
-    if args.fwbundle is None and args.fw_tar is None and args.download is None:
+    # -d/--download is only defined on the flash subparser, so reading it
+    # unconditionally raises AttributeError for every other subcommand.
+    download = getattr(args, "download", None)
+
+    # One of fwbundle, --fw-tar, or --download is required (mutual exclusion handled by argparse group).
+    # This applies to flash only: verify is documented as falling back to the
+    # flash record when no bundle is given, so requiring one would reject a
+    # documented invocation.
+    if (
+        args.command == "flash"
+        and args.fwbundle is None
+        and args.fw_tar is None
+        and download is None
+    ):
         parser.error("one of the following arguments are required: fwbundle, --fw-tar, or --download")
 
     # --fw-tar is deprecated, warn if it's being used
@@ -242,8 +255,10 @@ def main():
     CConfig.COLOR.use_color = not args.no_color
 
     print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
-    if args.download is not None:
-        fwbundle = download_fwbundle(args.download, args.no_tty)
+    # As in parse_args: --download exists only on the flash subparser.
+    download = getattr(args, "download", None)
+    if download is not None:
+        fwbundle = download_fwbundle(download, args.no_tty)
     else:
         fwbundle = args.fwbundle or args.fw_tar
 
@@ -349,6 +364,52 @@ def main():
                 print(f"FLASH {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
             else:
                 print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}")
+            return rc
+
+        elif args.command == "verify":
+            if fwbundle is None:
+                # --help describes falling back to a flash record written at
+                # install time. Nothing in this package writes one, so there is
+                # nothing to fall back to; ask for the bundle explicitly rather
+                # than failing further in with a confusing error.
+                raise TTError(
+                    "verify needs a firmware bundle: tt-flash verify <bundle>.fwbundle\n"
+                    "The no-bundle form described in --help relies on a flash record, "
+                    "which this version does not write."
+                )
+
+            try:
+                tar, version = load_manifest(fwbundle)
+            except Exception as e:
+                print(f"Opening of {fwbundle} failed with - {e}\n\n---\n")
+                parser.print_help()
+                sys.exit(1)
+
+            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} DETECT")
+            devices = detect_local_chips(ignore_ethernet=True)
+            if not devices:
+                print(f"VERIFY {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: No devices available to verify.")
+                sys.exit(1)
+
+            manifest = verify_package(tar, version)
+
+            print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} VERIFY")
+            rc = 0
+            for device in devices:
+                result = verify_chip(
+                    device.interface_id,
+                    fwbundle,
+                    manifest,
+                    skip_missing_fw=args.skip_missing_fw,
+                )
+                for message in result.debug_messages:
+                    print(message)
+                rc += result.rc
+
+            if rc == 0:
+                print(f"VERIFY {CConfig.COLOR.GREEN}SUCCESS{CConfig.COLOR.ENDC}")
+            else:
+                print(f"VERIFY {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}")
             return rc
 
         else:
