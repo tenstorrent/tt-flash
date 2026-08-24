@@ -253,7 +253,20 @@ class TTChip:
         pass
 
 
+# Telemetry lives in CSM; an address outside it means we did not find the table
+CSM_RANGE = range(0x10000000, 0x10080000)
+
+# A sanity bound on the entry count read off the chip, so that a garbage value
+# cannot turn into an enormous read
+MAX_TELEMETRY_ENTRIES = 4096
+
+
 class BhChip(TTChip):
+    def __init__(self, chip: PciChip):
+        super().__init__(chip)
+
+        self.telemetry_tag_cache = None
+
     def min_fw_version(self):
         return 0x0
 
@@ -288,6 +301,76 @@ class BhChip(TTChip):
         return FwVersion(
             allow_exception=True, exception=exception, running=running, spi=spi
         )
+
+    def read_telemetry_tag(self, tag: int) -> Optional[int]:
+        """
+        Reads one telemetry tag by number.
+
+        luwen's get_telemetry() demultiplexes the table into a fixed struct and
+        drops any tag it was not built to know about, so board variables read
+        the table directly. That also means a firmware that starts reporting a
+        new tag needs no change here.
+        """
+
+        if self.telemetry_tag_cache is None:
+            self.telemetry_tag_cache = self.__read_telemetry_table()
+
+        return self.telemetry_tag_cache.get(tag)
+
+    def __scratch_ram(self, index: int) -> int:
+        return self.luwen_chip.axi_translate(
+            f"arc_ss.reset_unit.SCRATCH_RAM[{index}]"
+        ).addr
+
+    def __read_telemetry_table(self) -> dict[int, int]:
+        """
+        Reads the whole telemetry table into a tag to value map.
+
+        The table and the data array are published as two independent
+        pointers, and a tag entry's offset indexes the data array. Nothing may
+        be assumed about where the two sit relative to each other.
+
+            struct telemetry_entry { uint16_t tag; uint16_t offset; };
+
+            struct telemetry_table {        // SCRATCH_RAM[13] points here
+                    uint32_t version;
+                    uint32_t entry_count;
+                    struct telemetry_entry tag_table[entry_count];
+            };
+
+            uint32_t telemetry_data[];      // SCRATCH_RAM[12] points here
+        """
+
+        try:
+            table = self.luwen_chip.axi_read32(self.__scratch_ram(13))
+            data = self.luwen_chip.axi_read32(self.__scratch_ram(12))
+            if table not in CSM_RANGE or data not in CSM_RANGE:
+                return {}
+
+            entry_count = self.luwen_chip.axi_read32(table + 4)
+            if not 0 < entry_count <= MAX_TELEMETRY_ENTRIES:
+                return {}
+
+            tag_table = self.axi_read(table + 8, entry_count * 4)
+        except Exception:
+            return {}
+
+        offsets = {}
+        for i in range(entry_count):
+            entry = int.from_bytes(tag_table[i * 4 : i * 4 + 4], "little")
+            offsets[entry & 0xFFFF] = entry >> 16
+
+        try:
+            # The length of the data array is not published, so read as far as
+            # the furthest offset any tag refers to.
+            values = self.axi_read(data, (max(offsets.values()) + 1) * 4)
+        except Exception:
+            return {}
+
+        return {
+            tag: int.from_bytes(values[offset * 4 : offset * 4 + 4], "little")
+            for tag, offset in offsets.items()
+        }
 
     def get_asic_location(self) -> int:
         """
