@@ -17,6 +17,7 @@ from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
 from collections import defaultdict
 
 from tt_flash import utility
+from tt_flash.compat_variables import CompatVariables, describe_missing
 from tt_flash.error import TTError
 from tt_flash.utility import CConfig, get_board_type
 
@@ -253,6 +254,10 @@ class TTChip:
         pass
 
 
+# Blackhole message codes, from include/tenstorrent/smc_msg.h
+MSG_FLASH_UNLOCK = 0xC2
+MSG_FLASH_LOCK = 0xC3
+
 # Telemetry lives in CSM; an address outside it means we did not find the table
 CSM_RANGE = range(0x10000000, 0x10080000)
 
@@ -265,6 +270,11 @@ class BhChip(TTChip):
     def __init__(self, chip: PciChip):
         super().__init__(chip)
 
+        # The board variables verified against the image about to be written.
+        # Zero until stage 1 has checked them, so a write that skips that check
+        # fails closed on a board that requires any.
+        self.verified_variables = 0
+        self.compat_variables: Optional[CompatVariables] = None
         self.telemetry_tag_cache = None
 
     def min_fw_version(self):
@@ -371,6 +381,51 @@ class BhChip(TTChip):
             tag: int.from_bytes(values[offset * 4 : offset * 4 + 4], "little")
             for tag, offset in offsets.items()
         }
+
+    def flash_unlock(self):
+        """
+        Unlocks the flash for writing, declaring the board variables we
+        verified against the image.
+
+        Firmware remembers the declaration until the next lock, so luwen's own
+        bare unlock inside spi_write rides on this one.
+        """
+
+        # Word 0 carries the message code and the number of variable words that
+        # follow; luwen overwrites only the code's byte.
+        try:
+            response = self.luwen_chip.arc_msg_buf(
+                [MSG_FLASH_UNLOCK | (1 << 8), self.verified_variables, 0, 0, 0, 0, 0, 0]
+            )
+        except Exception:
+            # Firmware too old to answer the message at all. luwen's own unlock
+            # ignores this as well; a flash that really is locked then fails at
+            # the write rather than here.
+            return
+
+        if response is None:
+            return
+
+        status = response[0] & 0xFF
+        required = response[1]
+        if status != 0:
+            raise TTError(
+                describe_missing(
+                    required, self.verified_variables, self.compat_variables
+                )
+            )
+
+    def flash_lock(self):
+        try:
+            self.luwen_chip.arc_msg_buf([MSG_FLASH_LOCK, 0, 0, 0, 0, 0, 0, 0])
+        except Exception:
+            pass
+
+    def spi_write(self, addr: int, data: bytes):
+        # luwen re-locks the flash after every write, which withdraws the
+        # firmware's record of what we verified, so declare it again each time.
+        self.flash_unlock()
+        super().spi_write(addr, data)
 
     def get_asic_location(self) -> int:
         """
