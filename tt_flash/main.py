@@ -317,7 +317,7 @@ def main():
                     (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images, args.force_all_variable_checks)
                     for dev in devices
                 ]
-                with Pool(initializer=pool_worker_init) as p:
+                with Pool(initializer=pool_worker_init, initargs=(CConfig,)) as p:
                     # The workers are forked, so a second thread is safe now.
                     spinner_thread.start()
                     results = p.starmap(flash_chip, flash_chip_args)

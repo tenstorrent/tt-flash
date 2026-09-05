@@ -15,10 +15,15 @@ Usage:
     pytest tests/test_worker_state.py -v
 """
 
+import copy
+import pickle
+import signal
+
 import pytest
 
 from tt_flash import flash, wormhole
 from tt_flash.flash import Manifest
+from tt_flash.utility import CConfig, CmdLineConfig, pool_worker_init
 
 
 class UnsupportedChip:
@@ -78,3 +83,42 @@ def test_flash_chip_does_not_leave_the_default_version_behind(unflashable_chip):
     )
 
     assert read_back_bundle_version() != b"\xff\xff\xff\xff"
+
+
+@pytest.fixture()
+def restore_worker_setup():
+    """
+    pool_worker_init changes settings a worker would keep for its whole life.
+    Put back what it changes in this process.
+    """
+    original_config = copy.copy(CConfig)
+    original_handler = signal.getsignal(signal.SIGINT)
+    yield
+    CConfig.adopt(original_config)
+    signal.signal(signal.SIGINT, original_handler)
+
+
+def test_pool_worker_init_applies_the_config(restore_worker_setup):
+    pool_worker_init(CmdLineConfig(use_color=False, force_no_tty=True))
+
+    assert CConfig.COLOR.use_color is False
+    assert CConfig.COLOR.RED == ""
+    assert CConfig.force_no_tty is True
+    assert CConfig.is_tty() is False
+
+
+def test_the_config_survives_the_trip_to_a_worker(restore_worker_setup):
+    """The pool pickles the initargs unless the worker is forked."""
+    config = CmdLineConfig(use_color=False, force_no_tty=True)
+
+    pool_worker_init(pickle.loads(pickle.dumps(config)))
+
+    assert CConfig.COLOR.use_color is False
+    assert CConfig.force_no_tty is True
+
+
+def test_pool_worker_init_ignores_sigint(restore_worker_setup):
+    """A worker must not take the interrupt that the parent is refusing."""
+    pool_worker_init(CmdLineConfig(use_color=True, force_no_tty=False))
+
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
