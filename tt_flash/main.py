@@ -306,7 +306,9 @@ def main():
             spinner_msg = f"\t\t{CConfig.COLOR.PURPLE}Flashing devices, this might take a minute...{CConfig.COLOR.ENDC}"
             stop_spinner = threading.Event()
             spinner_thread = threading.Thread(target=spinner_task, args=(spinner_msg, stop_spinner, CConfig.is_tty()))
-            spinner_thread.start()
+            # spinner_thread.start() must be postponed until the Pool is created, otherwise forking
+            # workers may take a copy of the stdout lock while spinner_thread has it locked. But
+            # they don't take a copy of spinner_thread so nobody ever unlocks it in that process.
 
             original_handler = install_no_interrupt_handler()
             try:
@@ -316,12 +318,15 @@ def main():
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init) as p:
+                    # The workers are forked, so a second thread is safe now.
+                    spinner_thread.start()
                     results = p.starmap(flash_chip, flash_chip_args)
             finally:
                 restore_sigint_handler(original_handler)
-                # Stop spinner
+                # Stop spinner. ident is None if the pool raised before it started.
                 stop_spinner.set()
-                spinner_thread.join()
+                if spinner_thread.ident is not None:
+                    spinner_thread.join()
 
             # Unpack results from flash operation
             needs_reset_wh = [res.needs_reset_wh for res in results if res.needs_reset_wh is not None]
