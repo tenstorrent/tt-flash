@@ -13,7 +13,7 @@ import signal
 import sys
 import tarfile
 import threading
-from multiprocessing import Pool
+import multiprocessing
 from pathlib import Path
 
 import tt_flash
@@ -35,6 +35,13 @@ from tt_flash.flash import (
 )
 
 from .chip import detect_local_chips, validate_p300_can_be_flashed
+
+# Flash workers are forked from a forkserver, a process that does nothing but
+# fork and so is always single-threaded, rather than from this process, which
+# is not. Python 3.14 makes this the default on linux; naming it keeps every
+# version this package supports on the same start method, and keeps the choice
+# somewhere it can be read.
+Pool = multiprocessing.get_context("forkserver").Pool
 
 
 # Make version available in --help
@@ -319,7 +326,8 @@ def main():
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init, initargs=(CConfig,)) as p:
-                    # The workers are forked, so a second thread is safe now.
+                    # Workers come from the forkserver now, so the order is
+                    # no longer load-bearing, but it costs nothing to keep.
                     spinner_thread.start()
                     results = p.starmap(flash_chip, flash_chip_args)
             finally:
