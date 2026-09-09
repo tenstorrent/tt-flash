@@ -1,3 +1,17 @@
+tt-flash (4.0.0) noble; urgency=medium
+
+  [ Andrew Lewycky ]
+  * compat_variables: evaluate board variables from a firmware bundle
+  * chip: read Blackhole telemetry by tag
+  * chip: declare verified board variables in FLASH_UNLOCK
+  * flash: check board variables before writing anything
+  * tests: cover board variable evaluation
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 4.0.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Wed, 09 Sep 2026 01:29:13 +0000
+
 tt-flash (3.11.0) noble; urgency=medium
 
   [ Alexander Lay ]
