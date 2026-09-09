@@ -11,6 +11,7 @@ import time
 from typing import Optional, Union
 import random
 
+from tt_flash import compat_variables
 from tt_flash.blackhole import boot_fs_write, parse_writes_from_image
 from tt_flash.blackhole import FlashWrite
 from tt_flash.chip import BhChip, TTChip, WhChip, detect_chips, resolve_board_type
@@ -98,6 +99,75 @@ class FlashResult:
     rc: int = 0
 
 
+def check_compat_variables(
+    chip: BhChip,
+    boardname: str,
+    fw_package: tarfile.TarFile,
+    debug_messages: list[str],
+    force_all_variable_checks: bool,
+) -> None:
+    """
+    Check that this image fits the board in front of us, beyond the board type
+    that selected it.
+
+    Raises TTError if it does not. Doing this before any write means an
+    incompatible image is reported cleanly, rather than partway through
+    flashing.
+    """
+
+    chip.compat_variables = compat_variables.load(fw_package, boardname)
+    verified, checks = compat_variables.evaluate(chip, chip.compat_variables)
+
+    # Report every variable, passing or not. Silence would otherwise stand for
+    # both "all supported" and "this bundle says nothing", which are very
+    # different things to be told after a flash.
+    for check in checks:
+        colour = (
+            CConfig.COLOR.GREEN
+            if check.state is compat_variables.CheckState.PASSED
+            else CConfig.COLOR.RED
+        )
+        debug_messages.append(f"\t\t\t{colour}{check.message}{CConfig.COLOR.ENDC}")
+
+    if not checks:
+        debug_messages.append(
+            f"\t\t\t{CConfig.COLOR.YELLOW}This firmware bundle does not say "
+            f"which hardware it supports{CConfig.COLOR.ENDC}"
+        )
+
+    failures = compat_variables.failed(checks)
+    if failures:
+        # Deliberately not covered by --force. Every other check --force
+        # bypasses costs at worst a wasted flash; this one decides whether the
+        # image can drive the flash part it is about to be written to, and
+        # getting it wrong leaves the board holding an image that cannot read
+        # itself back at the next boot. That board is bricked, with no recovery
+        # over PCIe.
+        if not force_all_variable_checks:
+            raise TTError(
+                "This firmware is not compatible with this board: "
+                + "; ".join(failure.message for failure in failures)
+            )
+
+        for failure in failures:
+            debug_messages.append(
+                f"\t\t\t{CConfig.COLOR.RED}WARNING:{CConfig.COLOR.ENDC} "
+                f"flashing anyway because --force-all-variable-checks was given."
+            )
+            # The check was deliberately overridden, so tell firmware it was
+            # made: without this the unlock is refused and nothing is written.
+            verified |= 1 << failure.variable.number
+
+    chip.verified_variables = verified
+
+    # Ask firmware now, so that a board whose requirements we cannot meet is
+    # reported before we start writing to it.
+    try:
+        chip.flash_unlock()
+    finally:
+        chip.flash_lock()
+
+
 def flash_chip_stage1(
     chip: TTChip,
     boardname: str,
@@ -108,6 +178,7 @@ def flash_chip_stage1(
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
     update_boot_images: bool = False,
+    force_all_variable_checks: bool = False,
 ) -> FlashStageResult:
     """
     Check the chip and determine if it is a candidate to be flashed.
@@ -285,6 +356,11 @@ def flash_chip_stage1(
         )
     else:
         writes = parse_wh_image(chip, boardname_to_display, image, mask)
+
+    if isinstance(chip, BhChip):
+        check_compat_variables(
+            chip, boardname, fw_package, debug_messages, force_all_variable_checks
+        )
 
     if isinstance(chip, BhChip):
         can_reset = True
@@ -545,6 +621,7 @@ def flash_chip(
     allow_major_downgrades: bool,
     skip_missing_fw: bool = False,
     update_boot_images: bool = False,
+    force_all_variable_checks: bool = False,
 ) -> FlashResult:
     """
     Flash firmware to a single chip. This function is process-safe and is intended to be called by
@@ -608,6 +685,7 @@ def flash_chip(
         allow_major_downgrades,
         skip_missing_fw=skip_missing_fw,
         update_boot_images=update_boot_images,
+        force_all_variable_checks=force_all_variable_checks,
     )
 
     if result.state == FlashStageResultState.Err:

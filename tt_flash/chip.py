@@ -17,6 +17,7 @@ from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
 from collections import defaultdict
 
 from tt_flash import utility
+from tt_flash.compat_variables import CompatVariables, describe_missing
 from tt_flash.error import TTError
 from tt_flash.utility import CConfig, get_board_type
 
@@ -253,7 +254,29 @@ class TTChip:
         pass
 
 
+# Blackhole message codes, from include/tenstorrent/smc_msg.h
+MSG_FLASH_UNLOCK = 0xC2
+MSG_FLASH_LOCK = 0xC3
+
+# Telemetry lives in CSM; an address outside it means we did not find the table
+CSM_RANGE = range(0x10000000, 0x10080000)
+
+# A sanity bound on the entry count read off the chip, so that a garbage value
+# cannot turn into an enormous read
+MAX_TELEMETRY_ENTRIES = 4096
+
+
 class BhChip(TTChip):
+    def __init__(self, chip: PciChip):
+        super().__init__(chip)
+
+        # The board variables verified against the image about to be written.
+        # Zero until stage 1 has checked them, so a write that skips that check
+        # fails closed on a board that requires any.
+        self.verified_variables = 0
+        self.compat_variables: Optional[CompatVariables] = None
+        self.telemetry_tag_cache = None
+
     def min_fw_version(self):
         return 0x0
 
@@ -288,6 +311,121 @@ class BhChip(TTChip):
         return FwVersion(
             allow_exception=True, exception=exception, running=running, spi=spi
         )
+
+    def read_telemetry_tag(self, tag: int) -> Optional[int]:
+        """
+        Reads one telemetry tag by number.
+
+        luwen's get_telemetry() demultiplexes the table into a fixed struct and
+        drops any tag it was not built to know about, so board variables read
+        the table directly. That also means a firmware that starts reporting a
+        new tag needs no change here.
+        """
+
+        if self.telemetry_tag_cache is None:
+            self.telemetry_tag_cache = self.__read_telemetry_table()
+
+        return self.telemetry_tag_cache.get(tag)
+
+    def __scratch_ram(self, index: int) -> int:
+        return self.luwen_chip.axi_translate(
+            f"arc_ss.reset_unit.SCRATCH_RAM[{index}]"
+        ).addr
+
+    def __read_telemetry_table(self) -> dict[int, int]:
+        """
+        Reads the whole telemetry table into a tag to value map.
+
+        The table and the data array are published as two independent
+        pointers, and a tag entry's offset indexes the data array. Nothing may
+        be assumed about where the two sit relative to each other.
+
+            struct telemetry_entry { uint16_t tag; uint16_t offset; };
+
+            struct telemetry_table {        // SCRATCH_RAM[13] points here
+                    uint32_t version;
+                    uint32_t entry_count;
+                    struct telemetry_entry tag_table[entry_count];
+            };
+
+            uint32_t telemetry_data[];      // SCRATCH_RAM[12] points here
+        """
+
+        try:
+            table = self.luwen_chip.axi_read32(self.__scratch_ram(13))
+            data = self.luwen_chip.axi_read32(self.__scratch_ram(12))
+            if table not in CSM_RANGE or data not in CSM_RANGE:
+                return {}
+
+            entry_count = self.luwen_chip.axi_read32(table + 4)
+            if not 0 < entry_count <= MAX_TELEMETRY_ENTRIES:
+                return {}
+
+            tag_table = self.axi_read(table + 8, entry_count * 4)
+        except Exception:
+            return {}
+
+        offsets = {}
+        for i in range(entry_count):
+            entry = int.from_bytes(tag_table[i * 4 : i * 4 + 4], "little")
+            offsets[entry & 0xFFFF] = entry >> 16
+
+        try:
+            # The length of the data array is not published, so read as far as
+            # the furthest offset any tag refers to.
+            values = self.axi_read(data, (max(offsets.values()) + 1) * 4)
+        except Exception:
+            return {}
+
+        return {
+            tag: int.from_bytes(values[offset * 4 : offset * 4 + 4], "little")
+            for tag, offset in offsets.items()
+        }
+
+    def flash_unlock(self):
+        """
+        Unlocks the flash for writing, declaring the board variables we
+        verified against the image.
+
+        Firmware remembers the declaration until the next lock, so luwen's own
+        bare unlock inside spi_write rides on this one.
+        """
+
+        # Word 0 carries the message code and the number of variable words that
+        # follow; luwen overwrites only the code's byte.
+        try:
+            response = self.luwen_chip.arc_msg_buf(
+                [MSG_FLASH_UNLOCK | (1 << 8), self.verified_variables, 0, 0, 0, 0, 0, 0]
+            )
+        except Exception:
+            # Firmware too old to answer the message at all. luwen's own unlock
+            # ignores this as well; a flash that really is locked then fails at
+            # the write rather than here.
+            return
+
+        if response is None:
+            return
+
+        status = response[0] & 0xFF
+        required = response[1]
+        if status != 0:
+            raise TTError(
+                describe_missing(
+                    required, self.verified_variables, self.compat_variables
+                )
+            )
+
+    def flash_lock(self):
+        try:
+            self.luwen_chip.arc_msg_buf([MSG_FLASH_LOCK, 0, 0, 0, 0, 0, 0, 0])
+        except Exception:
+            pass
+
+    def spi_write(self, addr: int, data: bytes):
+        # luwen re-locks the flash after every write, which withdraws the
+        # firmware's record of what we verified, so declare it again each time.
+        self.flash_unlock()
+        super().spi_write(addr, data)
 
     def get_asic_location(self) -> int:
         """

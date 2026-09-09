@@ -129,6 +129,17 @@ def parse_args():
         action="store_true",
         help="Force update the ROM, bypassing the version and board checks that would otherwise stop the flash. This does not rewrite the bootloader and recovery images; pass --update-boot-images as well to do that",
     )
+    # Hidden: a board whose flash part the image cannot drive will be left
+    # holding an image that cannot read itself back at the next boot, i.e.
+    # bricked. There is no recovery over PCIe from that. This exists only for
+    # the case where the bundle's compatibility data is known to be wrong and
+    # the hardware is known to be fine.
+    flash.add_argument(
+        "--force-all-variable-checks",
+        default=False,
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     flash.add_argument(
         "--no-reset",
         help="Do not reset devices at the end of flash",
@@ -301,7 +312,7 @@ def main():
             try:
                 # Run flash operations
                 flash_chip_args = [
-                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images)
+                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images, args.force_all_variable_checks)
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init) as p:
