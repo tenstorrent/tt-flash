@@ -247,6 +247,7 @@ def load_manifest(path: str):
 
 
 def main():
+    multiprocessing.freeze_support()
     parser, args = parse_args()
 
     CConfig.force_no_tty = args.no_tty
