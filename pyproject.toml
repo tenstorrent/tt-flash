@@ -24,7 +24,8 @@ dependencies = [
   "pyyaml == 6.0.2",
   "requests >= 2.28.0",
   'tt_tools_common ~= 1.5',
-  "pyluwen ~= 0.9.0",
+  # PT-378: flash even when CMFW reports a GDDR train/BIST error.
+  "pyluwen @ git+https://github.com/tenstorrent/luwen.git@sbansal/ignore_gddr_for_flash#subdirectory=bind/pyluwen",
   "tabulate == 0.9.0",
   "tomli == 2.0.1; python_version < '3.11'",
 
@@ -74,6 +75,9 @@ include-package-data = true
   'build',
   'debian',
 ]
+
+[tool.uv.sources]
+pyluwen = { git = "https://github.com/tenstorrent/luwen.git", branch = "sbansal/ignore_gddr_for_flash", subdirectory = "bind/pyluwen" }
 
 [tool.basedpyright]
 pythonVersion = "3.7"
