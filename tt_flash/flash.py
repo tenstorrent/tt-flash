@@ -482,8 +482,6 @@ def verify_package(fw_package: tarfile.TarFile, version: tuple[int, int, int]):
                 f"Bundle version {new_bundle_version} does not meet the requirements for version {'.'.join(map(str, version))}"
             )
 
-    set_bundle_version(list(new_bundle_version))
-
     return Manifest(data=manifest, bundle_version=new_bundle_version)
 
 
@@ -630,6 +628,9 @@ def flash_chip(
     (flash_chip_stage2).
     """
     debug_messages = []
+
+    # WH TAG_HANDLERS callbacks need this.
+    set_bundle_version(list(manifest.bundle_version))
 
     # Need to re-open chip in this process because chip object can't be pickled
     pci_chip = PciChip(interface_id)
