@@ -12,6 +12,7 @@ import tarfile
 
 import pytest
 
+from bh_shadow import get_board_name
 from tt_flash import boot_fs
 from tt_flash.blackhole import (
     CCFGOVR_TAGS,
@@ -20,26 +21,7 @@ from tt_flash.blackhole import (
     skip_ccfgovr,
     writeback_boardcfg,
 )
-from tt_flash.chip import BhChip, TTChip
-from tt_flash.utility import get_board_type
-
-
-def get_board_name(device: TTChip) -> str:
-    """Get board name for a device in order to grab the correct image from the fwbundle."""
-    try:
-        boardname = get_board_type(device.board_type(), from_type=True)
-    except:
-        boardname = pytest.fail(f"Board type not recognized for {device}")
-
-    # For P300 we need to check if it's L or R chip
-    if "P300" in boardname:
-        # 0 = Right, 1 = Left
-        if device.get_asic_location() == 0:
-            boardname = f"{boardname}_right"
-        elif device.get_asic_location() == 1:
-            boardname = f"{boardname}_left"
-
-    return boardname
+from tt_flash.chip import BhChip
 
 
 def bh_load_flash_writes_from_fwbundle(
