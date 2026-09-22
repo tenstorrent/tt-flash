@@ -15,7 +15,7 @@ tt-flash (4.0.0) noble; urgency=medium
 tt-flash (3.11.0) noble; urgency=medium
 
   [ Alexander Lay ]
-  * Add support for Galaxy Bin 6
+  * Add support for Galaxy CF
 
   [ Tenstorrent Releases ]
   * pyproject.toml- updating version to 3.11.0
