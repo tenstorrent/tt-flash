@@ -36,7 +36,6 @@ from tt_flash.flash import (
 
 from .chip import detect_local_chips, validate_p300_can_be_flashed
 
-
 # Make version available in --help
 with utility.package_root_path() as path:
     VERSION_FILE = path.joinpath(".ignored/version.txt")
@@ -73,7 +72,10 @@ class NoExitArgumentParser(argparse.ArgumentParser):
             raise ArgumentParseError(message)
 
 
-def parse_args():
+def parse_args(cmd_args: Optional[list[str]] = None):
+    global EXIT_ON_ERROR
+    EXIT_ON_ERROR = False
+
     # Parse arguments
     parser = NoExitArgumentParser(description=__doc__)
     parser.add_argument(
@@ -97,7 +99,10 @@ def parse_args():
 
     subparsers = parser.add_subparsers(title="command", dest="command", required=True)
 
-    flash = subparsers.add_parser("flash", help="Flash firmware to Tenstorrent devices on the system. Run tt-flash flash -h for further command-specific help.")
+    flash = subparsers.add_parser(
+        "flash",
+        help="Flash firmware to Tenstorrent devices on the system. Run tt-flash flash -h for further command-specific help.",
+    )
     flash_group = flash.add_mutually_exclusive_group()
     flash_group.add_argument(
         "fwbundle",
@@ -105,7 +110,9 @@ def parse_args():
         help="Path to the firmware bundle",
         type=Path,
     )
-    flash_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
+    flash_group.add_argument(
+        "--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path
+    )
     flash_group.add_argument(
         "-d",
         "--download",
@@ -147,7 +154,10 @@ def parse_args():
         action="store_true",
     )
     flash.add_argument(
-        "--allow-major-downgrades", default=False, action="store_true", help="Allow major version downgrades"
+        "--allow-major-downgrades",
+        default=False,
+        action="store_true",
+        help="Allow major version downgrades",
     )
     flash.add_argument(
         "--update-boot-images",
@@ -167,7 +177,9 @@ def parse_args():
         help="Path to the firmware bundle",
         type=Path,
     )
-    verify_group.add_argument("--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path)
+    verify_group.add_argument(
+        "--fw-tar", help="Path to the firmware tarball (deprecated)", type=Path
+    )
     verify.add_argument(
         "--skip-missing-fw",
         help="If the fw packages doesn't contain the fw for a detected board, continue flashing",
@@ -176,7 +188,10 @@ def parse_args():
         required=False,
     )
 
-    cmd_args = sys.argv.copy()[1:]
+    if cmd_args is None:
+        cmd_args = sys.argv.copy()[1:]
+    else:
+        cmd_args = cmd_args.copy()
 
     # So... I want to swap to having tt-flash respond to explicit subcommands
     # but to maintain backwards compatibility I had to make sure that the flash subcommand
@@ -205,21 +220,30 @@ def parse_args():
             cmd_args = cmd_args[1:]
 
     # Reenable exit on failure (the default behaviour)
-    global EXIT_ON_ERROR
     EXIT_ON_ERROR = True
 
     # Parse the args with the default behaviour
     args = parser.parse_args(args=cmd_args)
 
     # One of fwbundle, --fw-tar, or --download is required (mutual exclusion handled by argparse group)
-    if args.fwbundle is None and args.fw_tar is None and args.download is None:
-        parser.error("one of the following arguments are required: fwbundle, --fw-tar, or --download")
+    if (
+        args.command == "flash"
+        and getattr(args, "fwbundle", None) is None
+        and getattr(args, "fw_tar", None) is None
+        and getattr(args, "download", None) is None
+    ):
+        parser.error(
+            "one of the following arguments are required: fwbundle, --fw-tar, or --download"
+        )
 
     # --fw-tar is deprecated, warn if it's being used
-    if args.fw_tar:
-        print(f"{CConfig.COLOR.YELLOW}Warning: --fw-tar is deprecated, use positional argument instead: tt-flash {args.command} {args.fw_tar}{CConfig.COLOR.ENDC}")
+    if getattr(args, "fw_tar", None):
+        print(
+            f"{CConfig.COLOR.YELLOW}Warning: --fw-tar is deprecated, use positional argument instead: tt-flash {args.command} {args.fw_tar}{CConfig.COLOR.ENDC}"
+        )
 
     return parser, args
+
 
 def load_manifest(path: str):
     tar = tarfile.open(path, "r")
@@ -253,10 +277,11 @@ def main():
     CConfig.COLOR.use_color = not args.no_color
 
     print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
-    if args.download is not None:
-        fwbundle = download_fwbundle(args.download, args.no_tty)
+    download_arg = getattr(args, "download", None)
+    if download_arg is not None:
+        fwbundle = download_fwbundle(download_arg, args.no_tty)
     else:
-        fwbundle = args.fwbundle or args.fw_tar
+        fwbundle = getattr(args, "fwbundle", None) or getattr(args, "fw_tar", None)
 
     try:
         if args.command == "flash":
@@ -281,7 +306,9 @@ def main():
                 sys.exit(1)
 
             if not devices:
-                print(f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: No devices available to flash.")
+                print(
+                    f"FLASH {CConfig.COLOR.RED}FAILED{CConfig.COLOR.ENDC}: No devices available to flash."
+                )
                 sys.exit(1)
 
             print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} FLASH")
@@ -305,14 +332,25 @@ def main():
             # Set up spinner thread
             spinner_msg = f"\t\t{CConfig.COLOR.PURPLE}Flashing devices, this might take a minute...{CConfig.COLOR.ENDC}"
             stop_spinner = threading.Event()
-            spinner_thread = threading.Thread(target=spinner_task, args=(spinner_msg, stop_spinner, CConfig.is_tty()))
+            spinner_thread = threading.Thread(
+                target=spinner_task, args=(spinner_msg, stop_spinner, CConfig.is_tty())
+            )
             spinner_thread.start()
 
             original_handler = install_no_interrupt_handler()
             try:
                 # Run flash operations
                 flash_chip_args = [
-                    (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images, args.force_all_variable_checks)
+                    (
+                        dev.interface_id,
+                        fwbundle,
+                        manifest,
+                        args.force,
+                        args.allow_major_downgrades,
+                        args.skip_missing_fw,
+                        args.update_boot_images,
+                        args.force_all_variable_checks,
+                    )
                     for dev in devices
                 ]
                 with Pool(initializer=pool_worker_init) as p:
@@ -324,8 +362,12 @@ def main():
                 spinner_thread.join()
 
             # Unpack results from flash operation
-            needs_reset_wh = [res.needs_reset_wh for res in results if res.needs_reset_wh is not None]
-            needs_reset_bh = [res.needs_reset_bh for res in results if res.needs_reset_bh is not None]
+            needs_reset_wh = [
+                res.needs_reset_wh for res in results if res.needs_reset_wh is not None
+            ]
+            needs_reset_bh = [
+                res.needs_reset_bh for res in results if res.needs_reset_bh is not None
+            ]
             boardnames = [res.boardname for res in results]
             m3_delay = max((res.m3_delay for res in results), default=20)
             rc = sum(res.rc for res in results)
@@ -346,12 +388,16 @@ def main():
                     )
             else:
                 if rc != 0:
-                    print(f"\t\tErrors detected during flash, skipping automatic reset...")
+                    print(
+                        f"\t\tErrors detected during flash, skipping automatic reset..."
+                    )
                 else:
                     # Remove device object so we don't hold a file descriptor
                     # open across reset, as KMD will deny access to it after reset
                     del devices
-                    devices = reset_devices(needs_reset_wh, needs_reset_bh, m3_delay, boardnames)
+                    devices = reset_devices(
+                        needs_reset_wh, needs_reset_bh, m3_delay, boardnames
+                    )
 
             if devices is not None:
                 post_flash_check(devices, manifest)
@@ -367,6 +413,7 @@ def main():
     except Exception as e:
         print(f"{CConfig.COLOR.RED}Error: {e} {CConfig.COLOR.ENDC}")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
