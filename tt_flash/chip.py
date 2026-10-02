@@ -11,8 +11,7 @@ import sys
 import yaml
 
 from pyluwen import PciChip, Telemetry
-from pyluwen import detect_chips as luwen_detect_chips
-from pyluwen import detect_chips_fallible as luwen_detect_chips_fallible
+from pyluwen import detect_chips_for_flash as luwen_detect_chips_for_flash
 
 from collections import defaultdict
 
@@ -666,7 +665,11 @@ def detect_local_chips(
     ignore_ethernet: bool = False,
 ) -> list[Union[WhChip, BhChip]]:
     """
-    This will create a chip which only guarantees that you have communication with the chip.
+    Discover local chips that we can talk to over PCIe/SPI.
+
+    Uses pyluwen's flash-safe detect so a GDDR train/BIST failure does not
+    block flashing (PT-378). ignore_ethernet is accepted for callers but
+    flash-safe detect always stays off the NOC.
     """
 
     chip_count = 0
@@ -705,19 +708,7 @@ def detect_local_chips(
             time.sleep(0.01)
 
     output = []
-    for device in luwen_detect_chips_fallible(
-        local_only=True,
-        continue_on_failure=False,
-        callback=chip_detect_callback,
-        noc_safe=ignore_ethernet,
-    ):
-        if not device.have_comms():
-            raise Exception(
-                f"Do not have communication with {device}, you should reset or remove this device from your system before continuing."
-            )
-
-        device = device.force_upgrade()
-
+    for device in luwen_detect_chips_for_flash(callback=chip_detect_callback):
         if device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
         elif device.as_bh() is not None:
@@ -732,8 +723,9 @@ def detect_local_chips(
 
 
 def detect_chips(local_only: bool = False) -> list[Union[WhChip, BhChip]]:
+    """Flash-safe detect. local_only is unused; flash detect is always local."""
     output = []
-    for device in luwen_detect_chips(local_only=local_only):
+    for device in luwen_detect_chips_for_flash():
         if device.as_wh() is not None:
             output.append(WhChip(device.as_wh()))
         elif device.as_bh() is not None:
