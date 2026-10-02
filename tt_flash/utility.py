@@ -176,7 +176,11 @@ class ConfigurableCmdColor:
         self.use_color = use_color
 
     def __getattr__(self, k):
-        if k == "use_color":
+        if k.startswith("__"):
+            # Answer no special method lookups: pickle asks for __getstate__
+            # and must not be handed a colour code.
+            raise AttributeError(k)
+        elif k == "use_color":
             return self.use_color
         elif self.use_color:
             return getattr(CMD_LINE_COLOR, k)
@@ -192,12 +196,29 @@ class CmdLineConfig:
     def is_tty(self) -> bool:
         return (not self.force_no_tty) and sys.stdout.isatty()
 
+    def adopt(self, other: "CmdLineConfig") -> None:
+        """
+        Take on every setting of another instance.
+
+        Each module that prints reads the CConfig it imported, so the settings
+        have to land in that instance; rebinding the name would not reach them.
+        """
+        self.__dict__.update(vars(other))
+
 
 CConfig = CmdLineConfig(True, False)
 
-def pool_worker_init():
-    """Ignore SIGINT on multiprocessing pool worker init"""
+def pool_worker_init(config: CmdLineConfig) -> None:
+    """
+    Set up a multiprocessing pool worker.
+
+    The config comes from the command line, which only the parent parsed, so it
+    is passed in rather than read from this process's own CConfig: a worker that
+    was not forked starts with the defaults, and would colour its messages
+    against --no-color.
+    """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    CConfig.adopt(config)
 
 def install_no_interrupt_handler():
     """

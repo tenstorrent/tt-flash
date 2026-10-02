@@ -13,7 +13,7 @@ import signal
 import sys
 import tarfile
 import threading
-from multiprocessing import Pool
+import multiprocessing
 from pathlib import Path
 
 import tt_flash
@@ -35,6 +35,13 @@ from tt_flash.flash import (
 )
 
 from .chip import detect_local_chips, validate_p300_can_be_flashed
+
+# Flash workers are forked from a forkserver, a process that does nothing but
+# fork and so is always single-threaded, rather than from this process, which
+# is not. Python 3.14 makes this the default on linux; naming it keeps every
+# version this package supports on the same start method, and keeps the choice
+# somewhere it can be read.
+Pool = multiprocessing.get_context("forkserver").Pool
 
 
 # Make version available in --help
@@ -247,6 +254,7 @@ def load_manifest(path: str):
 
 
 def main():
+    multiprocessing.freeze_support()
     parser, args = parse_args()
 
     CConfig.force_no_tty = args.no_tty
@@ -306,7 +314,9 @@ def main():
             spinner_msg = f"\t\t{CConfig.COLOR.PURPLE}Flashing devices, this might take a minute...{CConfig.COLOR.ENDC}"
             stop_spinner = threading.Event()
             spinner_thread = threading.Thread(target=spinner_task, args=(spinner_msg, stop_spinner, CConfig.is_tty()))
-            spinner_thread.start()
+            # spinner_thread.start() must be postponed until the Pool is created, otherwise forking
+            # workers may take a copy of the stdout lock while spinner_thread has it locked. But
+            # they don't take a copy of spinner_thread so nobody ever unlocks it in that process.
 
             original_handler = install_no_interrupt_handler()
             try:
@@ -315,13 +325,17 @@ def main():
                     (dev.interface_id, fwbundle, manifest, args.force, args.allow_major_downgrades, args.skip_missing_fw, args.update_boot_images, args.force_all_variable_checks)
                     for dev in devices
                 ]
-                with Pool(initializer=pool_worker_init) as p:
+                with Pool(initializer=pool_worker_init, initargs=(CConfig,)) as p:
+                    # Workers come from the forkserver now, so the order is
+                    # no longer load-bearing, but it costs nothing to keep.
+                    spinner_thread.start()
                     results = p.starmap(flash_chip, flash_chip_args)
             finally:
                 restore_sigint_handler(original_handler)
-                # Stop spinner
+                # Stop spinner. ident is None if the pool raised before it started.
                 stop_spinner.set()
-                spinner_thread.join()
+                if spinner_thread.ident is not None:
+                    spinner_thread.join()
 
             # Unpack results from flash operation
             needs_reset_wh = [res.needs_reset_wh for res in results if res.needs_reset_wh is not None]
