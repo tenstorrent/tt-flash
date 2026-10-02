@@ -1,3 +1,21 @@
+tt-flash (4.1.0) noble; urgency=medium
+
+  [ Andrew Lewycky ]
+  * Build the flash pool before starting the spinner thread
+  * Set the wh bundle version in the worker that writes it
+  * Pass the command line config into the pool workers
+  * Support PyInstaller with non-default MP start methods
+  * Fork flash workers from a forkserver
+
+  [ Samridhi Bansal ]
+  * feat: flash chips even when GDDR train/BIST fails
+  * Pin pyluwen to 0.10.0 release
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 4.1.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 02 Oct 2026 19:02:03 +0000
+
 tt-flash (4.0.0) noble; urgency=medium
 
   [ Andrew Lewycky ]
