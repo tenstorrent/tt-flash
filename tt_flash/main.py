@@ -261,7 +261,7 @@ def main():
     CConfig.COLOR.use_color = not args.no_color
 
     print(f"{CConfig.COLOR.GREEN}Stage:{CConfig.COLOR.ENDC} SETUP")
-    if args.download is not None:
+    if getattr(args, "download", None) is not None:
         fwbundle = download_fwbundle(args.download, args.no_tty)
     else:
         fwbundle = args.fwbundle or args.fw_tar
