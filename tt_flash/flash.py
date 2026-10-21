@@ -523,7 +523,7 @@ def check_galaxy_eth_link_status(devices):
         )
 
 
-def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0", reset_time="0xF"):
+def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x3", reset_time="0xF"):
     """
     Reset the WH asics on the galaxy systems with the following steps:
     1. Perform USER_RESET ioctl on all chips
