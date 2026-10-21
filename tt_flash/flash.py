@@ -601,7 +601,8 @@ def glx_6u_trays_reset(reinit=True, ubb_num="0xF", dev_num="0xFF", op_mode="0x0"
 
     # after re-init check eth status - only if doing a full galaxy reset.
     # If doing a partial reset, eth connections will be broken because eth training will go out of sync
-    if ubb_num == 0xF:
+    ubb_val = int(ubb_num, 16) if isinstance(ubb_num, str) else ubb_num
+    if ubb_val == 0xF:
         check_galaxy_eth_link_status(chips)
     # All went well
     print(
