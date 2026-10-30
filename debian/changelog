@@ -1,3 +1,13 @@
+tt-flash (4.2.0) noble; urgency=medium
+
+  [ Samridhi Bansal ]
+  * Prefer no-retimer Galaxy IPMI reset when flashing a GLX.
+
+  [ Tenstorrent Releases ]
+  * pyproject.toml- updating version to 4.2.0
+
+ -- Tenstorrent Releases <releases@tenstorrent.com>  Fri, 30 Oct 2026 01:56:32 +0000
+
 tt-flash (4.1.0) noble; urgency=medium
 
   [ Andrew Lewycky ]
