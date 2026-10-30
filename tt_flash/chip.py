@@ -676,15 +676,22 @@ def detect_local_chips(
     block_count = 0
     last_draw = time.time()
     did_draw = False
+    last_status_string = None
+    had_down_chip = False
 
     def chip_detect_callback(status):
-        nonlocal chip_count, last_draw, block_count, did_draw
+        nonlocal chip_count, last_draw, block_count, did_draw, last_status_string, had_down_chip
 
         if status.new_chip():
             chip_count += 1
         elif status.correct_down():
             chip_count -= 1
+            had_down_chip = True
         chip_count = max(chip_count, 0)
+
+        status_string = status.status_string()
+        if status_string is not None:
+            last_status_string = status_string
 
         if sys.stdout.isatty():
             did_draw = True
@@ -699,7 +706,6 @@ def detect_local_chips(
                 print(f"\rDetected Chips: {chip_count}\n", end="", flush=True)
                 block_count = 1
 
-                status_string = status.status_string()
                 if status_string is not None:
                     for line in status_string.splitlines():
                         block_count += 1
@@ -718,6 +724,12 @@ def detect_local_chips(
 
     if not did_draw:
         print(f"\tDetected Chips: {chip_count}")
+        if last_status_string is not None and (not output or had_down_chip):
+            for line in last_status_string.splitlines():
+                print(f"\t{line}")
+    elif last_status_string is not None and (not output or had_down_chip):
+        for line in last_status_string.splitlines():
+            print(f"\t{line}")
 
     return output
 
