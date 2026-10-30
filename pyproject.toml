@@ -50,6 +50,7 @@ test = [
 markers = [
   "requires_hardware: marks tests as requiring Tenstorrent hardware",
   "flash: marks tests as flashing firmware Tenstorrent hardware",
+  "shadow_flash: marks tests as writing SPI in a scratch window, never the firmware region",
 ]
 
 [project.urls]
