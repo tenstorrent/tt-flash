@@ -37,9 +37,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "black == 24.10.0; python_version >= '3.9'",
-  "black == 24.8.0; python_version == '3.8'",
-  "black == 23.3.0; python_version == '3.7'"
+  "black == 26.10.1; python_version >= '3.9'",
+  "black == 26.10.1; python_version == '3.8'",
+  "black == 26.10.1; python_version == '3.7'"
 ]
 
 test = [
